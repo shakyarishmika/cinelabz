@@ -11,7 +11,7 @@ import RequestPage from "./RequestPage";
 
 // ---------- TMDB config ----------
 // .env.local එකේ NEXT_PUBLIC_TMDB_API_KEY=xxxx දාන්න. (hard-coded fallback key එක අයින් කළා)
-const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || "11b62acb01b14ccb50539617ec367524";
+const TMDB_API_KEY = "11b62acb01b14ccb50539617ec367524";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
