@@ -983,7 +983,7 @@ export default function Home() {
         /* --- 0. REQUEST PAGE (sign-in required) --- */
         <RequestPage user={user} authLoading={authLoading} onSignIn={openSignIn} onBack={handleBackToHome} />
       ) : selectedActor ? (
-        <div className="pt-28 sm:pt-36 max-w-7xl mx-auto px-6 pb-16 space-y-8">
+        <div className="pt-28 sm:pt-36 w-full min-w-0 max-w-7xl mx-auto px-6 pb-16 space-y-8">
           <button
             onClick={handleBackToHome}
             className="bg-white/10 hover:bg-white/20 border border-white/10 px-5 py-2.5 rounded-xl text-sm flex items-center gap-2 cursor-pointer transition"
@@ -1030,7 +1030,7 @@ export default function Home() {
         </div>
       ) : selectedMovie ? (
         /* --- 2. WATCH PAGE --- */
-        <div className="pt-24 sm:pt-36 max-w-6xl mx-auto px-4 sm:px-6 pb-16 space-y-6 sm:space-y-8">
+        <div className="pt-24 sm:pt-36 w-full min-w-0 max-w-6xl mx-auto px-4 sm:px-6 pb-16 space-y-6 sm:space-y-8">
           <div className="flex justify-between items-center gap-2 flex-wrap">
             <button
               onClick={handleBackToHome}
