@@ -32,6 +32,7 @@ export default function Comments({ contentId, user, authLoading, onSignIn }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   // Live comments for this title
   useEffect(() => {
@@ -44,7 +45,10 @@ export default function Comments({ contentId, user, authLoading, onSignIn }) {
         rows.sort((a, b) => (b.createdAt?.seconds ?? Infinity) - (a.createdAt?.seconds ?? Infinity));
         setList(rows);
       },
-      (err) => console.error("Comments listener error:", err)
+      (err) => {
+        console.error("Comments listener error:", err);
+        setLoadError(err.code || "unknown");
+      }
     );
   }, [contentId]);
 
@@ -67,7 +71,11 @@ export default function Comments({ contentId, user, authLoading, onSignIn }) {
       setText("");
     } catch (err) {
       console.error(err);
-      setError("Couldn't post your comment. Try again.");
+      setError(
+        err.code === "permission-denied"
+          ? "Firestore rules are blocking comments. Publish the rules from INTEGRATION.md."
+          : `Couldn't post your comment (${err.code || "error"}).`
+      );
     } finally {
       setSending(false);
     }
@@ -86,6 +94,14 @@ export default function Comments({ contentId, user, authLoading, onSignIn }) {
       <h3 className="text-lg font-bold">
         Comments <span className="text-gray-500 text-sm font-normal">({list.length})</span>
       </h3>
+
+      {loadError && (
+        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+          {loadError === "permission-denied"
+            ? "Can't load comments: Firestore rules are blocking the 'comments' collection. Publish the rules from INTEGRATION.md."
+            : `Can't load comments (${loadError}).`}
+        </p>
+      )}
 
       {!db ? (
         <p className="text-sm text-yellow-400">Comments need Firebase keys — see FIREBASE_SETUP.md.</p>

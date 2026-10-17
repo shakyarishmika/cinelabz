@@ -4,11 +4,41 @@
 // - tmdbId දීලා තියෙනවනම් කෙලින්ම ඒක පාවිච්චි වෙනවා.
 // - tmdbId නැත්නම් tmdbQuery (නැත්නම් title) + year වලින් TMDB search කරලා හොයාගන්නවා.
 // - `image` එක TMDB poster එක නැති වුණොත් විතරක් පාවිච්චි වෙන fallback එකක්.
+//
+// downloads  -> Download buttons (Direct popup + Telegram) පෙන්නන්න මේක ඕනේ.
+// seasons    -> TV series වල season dropdown + episode list පෙන්නන්න මේක ඕනේ.
 
 const FALLBACK_IMG =
   "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1200&auto=format&fit=crop&q=80";
 const TEST_VIDEO = "https://www.w3schools.com/html/mov_bbb.mp4";
 const TEST_SUBS = "https://gist.githubusercontent.com/netroy/126938b/raw/subtitles.vtt";
+
+// ---------- helpers (test data) ----------
+// code = Telegram bot code (bot's files.json key). Replace the urls with your real test files.
+const dl = (code) => ({
+  direct: [
+    { name: "Server 1", quality: "1080p", size: "1.2 GB", url: TEST_VIDEO },
+    { name: "Server 2", quality: "720p", size: "600 MB", url: TEST_VIDEO },
+    { name: "Server 3", quality: "480p", size: "300 MB", url: TEST_VIDEO },
+  ],
+  telegramCode: code,
+});
+
+const ep = (prefix, season, n) => ({
+  number: n,
+  title: `Episode ${n}`,
+  duration: "45m",
+  videoUrl: TEST_VIDEO,
+  subtitleUrl: TEST_SUBS,
+  downloads: dl(`${prefix}_s${season}e${n}`),
+});
+
+// makeSeasons("bb", [4, 3]) -> Season 1 with 4 episodes, Season 2 with 3 episodes
+const makeSeasons = (prefix, counts) =>
+  counts.map((count, i) => ({
+    number: i + 1,
+    episodes: Array.from({ length: count }, (_, j) => ep(prefix, i + 1, j + 1)),
+  }));
 
 export const movies = [
   // --- MOVIES ---
@@ -25,6 +55,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m1"),
     sinhalaDescription: "ලංකාවේ අංක එකේ සිංහල උපසිරැසි සමඟ නරඹන්න. උසස් තත්වයෙන් HD අත්දැකීමක්.",
   },
   {
@@ -39,6 +70,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m2"),
     sinhalaDescription: "අන්තර්කාශයේ අපූරු ගමන් මඟක් සිංහල උපසිරැසි සමඟින්.",
   },
   {
@@ -54,6 +86,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m3"),
     sinhalaDescription: "ෂාරුක් ඛාන්ගේ සුපිරි ක්‍රියාදාම සිනමාපටය සිංහල උපසිරැසි සමඟින්.",
   },
   {
@@ -68,6 +101,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m4"),
     sinhalaDescription: "සිහින ඇතුළත සිහින මවන ක්‍රියාදාම අත්දැකීමක් සිංහල උපසිරැසි සමඟින්.",
   },
   {
@@ -82,6 +116,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m5"),
     sinhalaDescription: "පැන්ඩෝරා ලෝකයේ සාගර සටන සිංහල උපසිරැසි සමඟින් නරඹන්න.",
   },
   {
@@ -97,6 +132,7 @@ export const movies = [
     image: FALLBACK_IMG,
     videoUrl: TEST_VIDEO,
     subtitleUrl: TEST_SUBS,
+    downloads: dl("m6"),
     sinhalaDescription: "රොකී බායිගේ අධිරාජ්‍යය නැවතත් රිදී තිරයට.",
   },
 
@@ -112,8 +148,7 @@ export const movies = [
     language: "Korean",
     rating: "8.9/10",
     image: FALLBACK_IMG,
-    videoUrl: TEST_VIDEO,
-    subtitleUrl: TEST_SUBS,
+    seasons: makeSeasons("sg", [4, 3]),
     sinhalaDescription: "ළඟ එන මාරාන්තික ක්‍රීඩා මාලාව සිංහල උපසිරැසි සමඟින්.",
   },
   {
@@ -127,8 +162,7 @@ export const movies = [
     language: "English",
     rating: "8.6/10",
     image: FALLBACK_IMG,
-    videoUrl: TEST_VIDEO,
-    subtitleUrl: TEST_SUBS,
+    seasons: makeSeasons("hotd", [5, 4]),
     sinhalaDescription: "ඩ්‍රැගන් යුද්ධයේ දෙවන අදියර සිංහල උපසිරැසි සමඟින්.",
   },
   {
@@ -142,8 +176,7 @@ export const movies = [
     language: "English",
     rating: "9.5/10",
     image: FALLBACK_IMG,
-    videoUrl: TEST_VIDEO,
-    subtitleUrl: TEST_SUBS,
+    seasons: makeSeasons("bb", [4, 4, 3]),
     sinhalaDescription: "ලොව මෙතෙක් බිහි වූ විශිෂ්ටතම අපරාධ කතා මාලාව සම්පූර්ණයෙන්.",
   },
   {
@@ -157,8 +190,7 @@ export const movies = [
     language: "English",
     rating: "8.3/10",
     image: FALLBACK_IMG,
-    videoUrl: TEST_VIDEO,
-    subtitleUrl: TEST_SUBS,
+    seasons: makeSeasons("pb", [4, 4]),
     sinhalaDescription: "බන්ධනාගාරයෙන් පලා යාමේ කතා මාලාව.",
   },
   {
@@ -181,6 +213,7 @@ export const movies = [
       "720p": "https://mega.nz/embed/1ncyzZhb#-GjFGwHzDj-CFoyYBYH-ijhv1N8eyAuVazKFzWgyAZI",
       "480p": "https://mega.nz/embed/Iic0EKQZ#eGwzsAbZwzlhNc27D7JZqtXKk-ZnVrPctax8jMewq3I",
     },
+    downloads: dl("m11"),
     subtitleUrl: TEST_SUBS,
   },
 ];
