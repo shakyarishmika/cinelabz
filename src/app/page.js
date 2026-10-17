@@ -4,11 +4,14 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { movies as baseMovies, trendingMovieIds, trendingSeriesIds, heroCount } from "./moviesData";
 import { useAuth } from "./useAuth";
 import SignInModal from "./SignInModal";
+import DownloadButtons from "./DownloadButtons";
+import Comments from "./Comments";
+import SeasonEpisodes from "./SeasonEpisodes";
 import RequestPage from "./RequestPage";
 
 // ---------- TMDB config ----------
-// .env.local එකේ NEXT_PUBLIC_TMDB_API_KEY=xxxx දාන එක හොඳයි. නැත්නම් පහල key එක පාවිච්චි වෙනවා.
-const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || "11b62acb01b14ccb50539617ec367524";
+// .env.local එකේ NEXT_PUBLIC_TMDB_API_KEY=xxxx දාන්න. (hard-coded fallback key එක අයින් කළා)
+const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || "";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
@@ -62,8 +65,16 @@ const onImgError = (fallback) => (e) => {
   if (e.target.src !== fallback) e.target.src = fallback;
 };
 
+// First season / episode numbers of a title (used to reset the picker)
+const firstSeasonNo = (item) => item?.seasons?.[0]?.number ?? 1;
+const firstEpisodeNo = (item) => item?.seasons?.[0]?.episodes?.[0]?.number ?? 1;
+
+// Quality key to start with, for a movie or an episode
+const firstQuality = (src) => (src?.videoLinks ? Object.keys(src.videoLinks)[0] : "");
+
 // Resolve tmdbId (given or via search) and fetch details + credits in one request
 async function fetchTmdbData(item) {
+  if (!TMDB_API_KEY) return null;
   const kind = item.type === "movie" ? "movie" : "tv";
   let id = item.tmdbId;
 
@@ -105,6 +116,8 @@ export default function Home() {
   const [tmdbData, setTmdbData] = useState({}); // { [movie.id]: data }
   const [selectedId, setSelectedId] = useState(null);
   const [selectedQuality, setSelectedQuality] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(1);
+  const [selectedEpisode, setSelectedEpisode] = useState(1);
   const [selectedActor, setSelectedActor] = useState(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
@@ -219,7 +232,9 @@ export default function Home() {
         if (found) {
           setSelectedId(found.id);
           setSelectedActor(null);
-          setSelectedQuality(found.videoLinks ? Object.keys(found.videoLinks)[0] : "");
+          setSelectedSeason(firstSeasonNo(found));
+          setSelectedEpisode(firstEpisodeNo(found));
+          setSelectedQuality(firstQuality(found.seasons?.[0]?.episodes?.[0] || found));
           return;
         }
       }
@@ -362,7 +377,9 @@ export default function Home() {
     setShowRequest(false);
     setSelectedId(item.id);
     setSelectedActor(null);
-    setSelectedQuality(item.videoLinks ? Object.keys(item.videoLinks)[0] : "");
+    setSelectedSeason(firstSeasonNo(item));
+    setSelectedEpisode(firstEpisodeNo(item));
+    setSelectedQuality(firstQuality(item.seasons?.[0]?.episodes?.[0] || item));
     window.history.pushState({}, "", `/?movie=${item.id}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -408,8 +425,21 @@ export default function Home() {
         .find((a) => a?.name?.toLowerCase() === selectedActor.toLowerCase() && a.image)?.image
     : null;
 
-  const currentLink = selectedMovie?.videoLinks ? selectedMovie.videoLinks[selectedQuality] : selectedMovie?.videoUrl;
+  // ---------- Player source (movie, or the chosen episode of a series) ----------
+  const activeSeason =
+    selectedMovie?.seasons?.find((s) => s.number === selectedSeason) || selectedMovie?.seasons?.[0];
+  const activeEpisode =
+    activeSeason?.episodes?.find((e) => e.number === selectedEpisode) || activeSeason?.episodes?.[0];
+  const source = activeEpisode || selectedMovie;
+  const qualityKeys = source?.videoLinks ? Object.keys(source.videoLinks) : [];
+  const currentLink = source?.videoLinks
+    ? source.videoLinks[selectedQuality] || source.videoLinks[qualityKeys[0]]
+    : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
+  const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
+  const downloadTitle = activeEpisode
+    ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
+    : selectedMovie?.title;
 
   const isSeriesFilter = ["series-all", "ongoing", "completed"].includes(selectedType);
   const activeHero = heroSlides[heroIndex % Math.max(heroSlides.length, 1)];
@@ -990,20 +1020,24 @@ export default function Home() {
         </div>
       ) : selectedMovie ? (
         /* --- 2. WATCH PAGE --- */
-        <div className="pt-28 sm:pt-36 max-w-6xl mx-auto px-4 sm:px-6 pb-16 space-y-8">
-          <div className="flex justify-between items-center">
+        <div className="pt-24 sm:pt-36 max-w-6xl mx-auto px-4 sm:px-6 pb-16 space-y-6 sm:space-y-8">
+          <div className="flex justify-between items-center gap-2 flex-wrap">
             <button
               onClick={handleBackToHome}
-              className="bg-white/10 hover:bg-white/20 border border-white/10 px-5 py-2.5 rounded-xl text-sm flex items-center gap-2 cursor-pointer transition"
+              className="bg-white/10 hover:bg-white/20 border border-white/10 px-4 sm:px-5 py-2.5 rounded-xl text-sm flex items-center gap-2 cursor-pointer transition"
             >
               ← Back to Home
             </button>
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(window.location.href);
-                alert("Movie link copied to clipboard!");
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(window.location.href);
+                  alert("Movie link copied to clipboard!");
+                } catch {
+                  window.prompt("Copy this link:", window.location.href);
+                }
               }}
-              className="bg-red-600 hover:bg-red-700 px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer"
+              className="bg-red-600 hover:bg-red-700 px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer"
             >
               🔗 Share Movie Link
             </button>
@@ -1017,12 +1051,18 @@ export default function Home() {
                   {selectedMovie.genres?.length ? selectedMovie.genres.join(" / ") : selectedMovie.category} •{" "}
                   {selectedMovie.language} • ⭐ {selectedMovie.rating}
                 </p>
+                {activeEpisode && (
+                  <p className="text-xs sm:text-sm text-gray-200 font-semibold mt-1">
+                    Season {activeSeason.number} • Episode {activeEpisode.number}
+                    {activeEpisode.title ? ` — ${activeEpisode.title}` : ""}
+                  </p>
+                )}
                 {selectedMovie.tagline && (
                   <p className="text-xs text-red-400 italic mt-1">{selectedMovie.tagline}</p>
                 )}
               </div>
 
-              {selectedMovie.videoLinks && (
+              {source?.videoLinks && (
                 <div className="flex items-center gap-2 bg-neutral-900 border border-white/10 px-4 py-2 rounded-xl shadow-lg">
                   <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Quality:</span>
                   <select
@@ -1030,7 +1070,7 @@ export default function Home() {
                     onChange={(e) => setSelectedQuality(e.target.value)}
                     className="bg-transparent text-red-500 font-bold text-sm focus:outline-none cursor-pointer"
                   >
-                    {Object.keys(selectedMovie.videoLinks).map((q) => (
+                    {qualityKeys.map((q) => (
                       <option key={q} value={q} className="bg-neutral-900 text-white">
                         {q} HD
                       </option>
@@ -1040,29 +1080,53 @@ export default function Home() {
               )}
             </div>
 
-            <div className="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-white/5">
+            <div className="relative aspect-video bg-black rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-white/5">
               {isMegaEmbed ? (
-                <iframe src={currentLink} className="w-full h-full border-0" allowFullScreen loading="lazy"></iframe>
+                <iframe
+                  src={currentLink}
+                  className="w-full h-full border-0"
+                  allow="fullscreen; autoplay"
+                  allowFullScreen
+                  loading="lazy"
+                ></iframe>
               ) : (
                 <video
                   key={currentLink}
                   controls
-                  crossOrigin="anonymous"
+                  playsInline
+                  /* crossOrigin is only needed when a cross-origin subtitle track is used */
+                  crossOrigin={subtitleUrl ? "anonymous" : undefined}
                   className="w-full h-full object-contain"
                   poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 >
                   <source src={currentLink} type="video/mp4" />
-                  {selectedMovie.subtitleUrl && (
-                    <track kind="subtitles" src={selectedMovie.subtitleUrl} srcLang="si" label="Sinhala" default />
-                  )}
+                  {subtitleUrl && <track kind="subtitles" src={subtitleUrl} srcLang="si" label="Sinhala" default />}
                   Your browser does not support the video tag.
                 </video>
               )}
             </div>
+
+            {/* TV series: season dropdown + episode list */}
+            {selectedMovie.seasons && (
+              <SeasonEpisodes
+                seasons={selectedMovie.seasons}
+                seasonNo={activeSeason?.number}
+                episodeNo={activeEpisode?.number}
+                onSeason={(n) => {
+                  setSelectedSeason(n);
+                  const first = selectedMovie.seasons.find((s) => s.number === n)?.episodes?.[0];
+                  setSelectedEpisode(first?.number ?? 1);
+                }}
+                onEpisode={setSelectedEpisode}
+              />
+            )}
+
+            {/* Download: Direct (servers popup) + Telegram bot */}
+            <DownloadButtons downloads={source?.downloads} title={downloadTitle} />
           </div>
 
           {/* DETAILS + CAST */}
-          <div className="bg-neutral-900/60 border border-white/10 p-6 sm:p-8 rounded-3xl backdrop-blur-md space-y-6">
+          <div className="bg-neutral-900/60 border border-white/10 p-5 sm:p-8 rounded-3xl backdrop-blur-md space-y-6">
             <div className="flex flex-col sm:flex-row gap-6">
               <img
                 src={selectedMovie.poster || FALLBACK_POSTER}
@@ -1097,7 +1161,7 @@ export default function Home() {
             </div>
 
             <div>
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
                 <h3 className="text-md font-bold text-gray-200 uppercase tracking-wider">Top Cast / ප්‍රධාන නළුවන්</h3>
                 <span className="text-xs text-gray-400">Click a cast member to view their movies</span>
               </div>
@@ -1136,6 +1200,9 @@ export default function Home() {
               )}
             </div>
           </div>
+
+          {/* COMMENTS (sign in to post) */}
+          <Comments contentId={selectedMovie.id} user={user} authLoading={authLoading} onSignIn={openSignIn} />
         </div>
       ) : (
         /* --- 3. HOME --- */
@@ -1297,7 +1364,13 @@ export default function Home() {
         onClose={() => setShowSignIn(false)}
         onGoogle={signIn}
         error={authError}
-        reason={showRequest ? "Sign in with your Google account to request movies & TV series." : undefined}
+        reason={
+          showRequest
+            ? "Sign in with your Google account to request movies & TV series."
+            : selectedMovie
+            ? "Sign in with your Google account to join the comments."
+            : undefined
+        }
       />
 
       {/* --- FOOTER --- */}
