@@ -123,6 +123,16 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Phone-size screens get a slimmer navbar
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   // Auth (Google) + request page
   const { user, loading: authLoading, error: authError, setError: setAuthError, signIn, signOutUser } = useAuth();
@@ -481,12 +491,12 @@ export default function Home() {
           {item.quality || "HD"}
         </span>
       </div>
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
           <span className="truncate pr-2">{item.genres?.slice(0, 2).join(" / ") || item.category}</span>
           <span className="text-yellow-400 font-bold flex-shrink-0">⭐ {item.rating}</span>
         </div>
-        <h3 className="font-bold text-base text-white group-hover:text-red-500 truncate">{item.title}</h3>
+        <h3 className="font-bold text-sm sm:text-base text-white group-hover:text-red-500 truncate">{item.title}</h3>
       </div>
     </div>
   );
@@ -542,10 +552,10 @@ export default function Home() {
           width: isSearching ? "90%" : `${100 - scrollProgress * 10}%`,
           borderRadius: "9999px",
           top: isSearching ? "16px" : `${scrollProgress * 16}px`,
-          paddingLeft: `${32 - scrollProgress * 8}px`,
-          paddingRight: `${32 - scrollProgress * 8}px`,
-          paddingTop: `${20 - scrollProgress * 6}px`,
-          paddingBottom: `${20 - scrollProgress * 6}px`,
+          paddingLeft: `${isMobile ? 14 : 32 - scrollProgress * 8}px`,
+          paddingRight: `${isMobile ? 14 : 32 - scrollProgress * 8}px`,
+          paddingTop: `${isMobile ? 12 - scrollProgress * 3 : 20 - scrollProgress * 6}px`,
+          paddingBottom: `${isMobile ? 12 - scrollProgress * 3 : 20 - scrollProgress * 6}px`,
           backgroundColor: isSearching ? "rgba(10, 10, 10, 0.9)" : `rgba(10, 10, 10, ${scrollProgress * 0.85})`,
           backdropFilter: isSearching || scrollProgress > 0 ? "blur(20px)" : "none",
           borderWidth: isSearching || scrollProgress > 0 ? "1px" : "0px",
@@ -1010,7 +1020,7 @@ export default function Home() {
                 <p>No other movies found for this cast member.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8">
                 {actorMovies.map((item) => (
                   <div key={item.id}>{renderCard(item)}</div>
                 ))}
@@ -1063,7 +1073,7 @@ export default function Home() {
               </div>
 
               {source?.videoLinks && (
-                <div className="flex items-center gap-2 bg-neutral-900 border border-white/10 px-4 py-2 rounded-xl shadow-lg">
+                <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto bg-neutral-900 border border-white/10 px-4 py-2 rounded-xl shadow-lg">
                   <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Quality:</span>
                   <select
                     value={selectedQuality}
@@ -1080,7 +1090,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="relative aspect-video bg-black rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-white/5">
+            <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl border-y sm:border border-white/10">
               {isMegaEmbed ? (
                 <iframe
                   src={currentLink}
@@ -1209,7 +1219,7 @@ export default function Home() {
         <div>
           {showHero && heroItem && (
             <div
-              className="relative h-screen w-full flex items-end p-8 sm:p-16 overflow-hidden"
+              className="relative h-[100svh] w-full flex items-end p-6 sm:p-16 overflow-hidden"
               onMouseEnter={() => setHeroPaused(true)}
               onMouseLeave={() => setHeroPaused(false)}
             >
@@ -1309,7 +1319,7 @@ export default function Home() {
                 <p className="text-lg">No movies or series found! 🔍</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8">
                 {pagedMovies.map((item) => (
                   <div key={item.id}>{renderCard(item)}</div>
                 ))}
