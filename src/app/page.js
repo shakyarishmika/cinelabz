@@ -10,11 +10,14 @@ import SignInModal from "./SignInModal";
 import DownloadButtons from "./DownloadButtons";
 import Comments from "./Comments";
 import SeasonEpisodes from "./SeasonEpisodes";
+import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
 // ---------- TMDB config ----------
 // .env.local එකේ NEXT_PUBLIC_TMDB_API_KEY=xxxx දාන්න. (hard-coded fallback key එක අයින් කළා)
 const TMDB_API_KEY = "11b62acb01b14ccb50539617ec367524";
+// Telegram stream server (stream_server.py), e.g. https://your-stream-server.onrender.com
+const STREAM_BASE = (process.env.NEXT_PUBLIC_STREAM_BASE || "").replace(/\/$/, "");
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
@@ -492,6 +495,14 @@ export default function Home() {
     : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
   const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
+  // Telegram stream: video + subtitle come from the stream server using one code
+  const streamCode = source?.streamCode;
+  const useStream = !!(streamCode && STREAM_BASE);
+  const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
+  const subtitleList = [
+    ...(useStream ? [{ label: "Sinhala (Telegram)", url: `${STREAM_BASE}/sub/${encodeURIComponent(streamCode)}.vtt` }] : []),
+    ...(subtitleUrl ? [{ label: "Sinhala", url: subtitleUrl }] : []),
+  ];
   const downloadTitle = activeEpisode
     ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
     : selectedMovie?.title;
@@ -1143,8 +1154,8 @@ export default function Home() {
               )}
             </div>
 
-            <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl border-y sm:border border-white/10">
-              {isMegaEmbed ? (
+            {isMegaEmbed ? (
+              <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl border-y sm:border border-white/10">
                 <iframe
                   src={currentLink}
                   className="w-full h-full border-0"
@@ -1152,22 +1163,16 @@ export default function Home() {
                   allowFullScreen
                   loading="lazy"
                 ></iframe>
-              ) : (
-                <video
-                  key={currentLink}
-                  controls
-                  playsInline
-                  /* crossOrigin is only needed when a cross-origin subtitle track is used */
-                  crossOrigin={subtitleUrl ? "anonymous" : undefined}
-                  className="w-full h-full object-contain"
-                  poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
-                >
-                  <source src={currentLink} type="video/mp4" />
-                  {subtitleUrl && <track kind="subtitles" src={subtitleUrl} srcLang="si" label="Sinhala" default />}
-                  Your browser does not support the video tag.
-                </video>
-              )}
-            </div>
+              </div>
+            ) : (
+              <AdvancedPlayer
+                key={playUrl}
+                src={playUrl}
+                poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
+                subtitles={subtitleList}
+                storageKey={`${selectedMovie.id}-${activeEpisode ? `${activeSeason.number}-${activeEpisode.number}` : "m"}`}
+              />
+            )}
 
             {/* TV series: season dropdown + episode list */}
             {selectedMovie.seasons && (

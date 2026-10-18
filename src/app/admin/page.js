@@ -236,6 +236,7 @@ function TitleForm({ initial, onDone }) {
     subtitleUrl: initial?.subtitleUrl || "",
     servers: serversToText(initial?.downloads?.direct),
     telegramCode: initial?.downloads?.telegramCode || "",
+    streamCode: initial?.streamCode || "",
   }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -246,7 +247,7 @@ function TitleForm({ initial, onDone }) {
     e.preventDefault();
     setErr("");
     if (f.title.trim().length < 2) return setErr("Enter a title.");
-    if (!isSeries && !f.videoUrl.trim()) return setErr("Enter the video link for this movie.");
+    if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
     const hasDownloads = direct.length > 0 || f.telegramCode.trim();
@@ -267,6 +268,7 @@ function TitleForm({ initial, onDone }) {
         ? { status: f.status }
         : {
             videoUrl: f.videoUrl.trim(),
+            streamCode: f.streamCode.trim(),
             downloads: hasDownloads ? { direct, telegramCode: f.telegramCode.trim() } : null,
           }),
     };
@@ -382,8 +384,13 @@ function TitleForm({ initial, onDone }) {
       ) : (
         <>
           <div>
-            <label className={labelCls}>Video link * (mp4 or mega.nz/embed)</label>
+            <label className={labelCls}>Video link (mp4 or mega.nz/embed)</label>
             <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Telegram stream code (MKV/MP4 + subtitle)</label>
+            <input value={f.streamCode} onChange={set("streamCode")} placeholder="m_inception" className={inputCls} />
+            <p className="text-[11px] text-gray-500 mt-1">Code from stream_files.json. If set, it is used instead of the video link.</p>
           </div>
           <div>
             <label className={labelCls}>Direct download servers</label>
@@ -422,7 +429,7 @@ function TitleForm({ initial, onDone }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", subtitleUrl: "", servers: "", telegramCode: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", streamCode: "", subtitleUrl: "", servers: "", telegramCode: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -435,7 +442,7 @@ function EpisodesManager({ title, onBack }) {
     const sNo = parseInt(f.season, 10);
     const eNo = parseInt(f.ep, 10);
     if (!(sNo >= 1) || !(eNo >= 1)) return setErr("Season and episode numbers must be 1 or more.");
-    if (!f.videoUrl.trim()) return setErr("Enter the episode video link.");
+    if (!f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
     const episode = {
@@ -443,6 +450,7 @@ function EpisodesManager({ title, onBack }) {
       title: f.name.trim() || `Episode ${eNo}`,
       duration: f.duration.trim(),
       videoUrl: f.videoUrl.trim(),
+      streamCode: f.streamCode.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
       downloads: direct.length || f.telegramCode.trim() ? { direct, telegramCode: f.telegramCode.trim() } : null,
     };
@@ -485,6 +493,7 @@ function EpisodesManager({ title, onBack }) {
       name: ep.title || "",
       duration: ep.duration || "",
       videoUrl: ep.videoUrl || "",
+      streamCode: ep.streamCode || "",
       subtitleUrl: ep.subtitleUrl || "",
       servers: serversToText(ep.downloads?.direct),
       telegramCode: ep.downloads?.telegramCode || "",
@@ -540,8 +549,12 @@ function EpisodesManager({ title, onBack }) {
           </div>
         </div>
         <div>
-          <label className={labelCls}>Video link * (mp4 or mega.nz/embed)</label>
+          <label className={labelCls}>Video link (mp4 or mega.nz/embed)</label>
           <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Telegram stream code (MKV/MP4 + subtitle)</label>
+          <input value={f.streamCode} onChange={set("streamCode")} placeholder="show_s1e1" className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>Subtitle (.vtt) URL</label>
