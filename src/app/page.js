@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { movies as baseMovies, trendingMovieIds, trendingSeriesIds, heroCount } from "./moviesData";
+import { movies as staticMovies, trendingMovieIds, trendingSeriesIds, heroCount } from "./moviesData";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { db } from "./firebase";
+import { isAdminEmail } from "./adminConfig";
 import { useAuth } from "./useAuth";
 import SignInModal from "./SignInModal";
 import DownloadButtons from "./DownloadButtons";
@@ -114,6 +117,7 @@ async function fetchTmdbData(item) {
 
 export default function Home() {
   const [tmdbData, setTmdbData] = useState({}); // { [movie.id]: data }
+  const [dbTitles, setDbTitles] = useState([]); // titles added from /admin (Firestore)
   const [selectedId, setSelectedId] = useState(null);
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -184,20 +188,63 @@ export default function Home() {
   const movieCarouselRef = useRef(null);
   const seriesCarouselRef = useRef(null);
 
-  // ---------- Load everything from TMDB once ----------
+  // ---------- Titles added from the admin panel (Firestore) ----------
   useEffect(() => {
-    let cancelled = false;
+    if (!db) return;
+    return onSnapshot(
+      collection(db, "titles"),
+      (snap) => setDbTitles(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+      (err) => console.error("Titles listener error:", err)
+    );
+  }, []);
+
+  // Admin-added titles first (newest on top), then the ones from moviesData.js
+  const baseMovies = useMemo(
+    () => [
+      ...[...dbTitles].sort((a, b) => (b.createdAt?.seconds ?? 1e12) - (a.createdAt?.seconds ?? 1e12)),
+      ...staticMovies,
+    ],
+    [dbTitles]
+  );
+  const baseRef = useRef(baseMovies);
+  baseRef.current = baseMovies;
+
+  // ---------- Load TMDB data (once per title) ----------
+  const fetchedRef = useRef(new Set());
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
     baseMovies.forEach((item) => {
+      if (fetchedRef.current.has(item.id)) return;
+      fetchedRef.current.add(item.id);
       fetchTmdbData(item)
         .then((data) => {
-          if (data && !cancelled) setTmdbData((prev) => ({ ...prev, [item.id]: data }));
+          if (data && aliveRef.current) setTmdbData((prev) => ({ ...prev, [item.id]: data }));
         })
         .catch((err) => console.error(`TMDB error (${item.title}):`, err));
     });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [baseMovies]);
+
+  // ---------- Save the signed-in user so the admin can manage users ----------
+  useEffect(() => {
+    if (!user || !db) return;
+    setDoc(
+      doc(db, "users", user.uid),
+      {
+        uid: user.uid,
+        name: user.displayName || "",
+        email: user.email || "",
+        photoURL: user.photoURL || "",
+        lastLogin: serverTimestamp(),
+      },
+      { merge: true }
+    ).catch((err) => console.error("User sync error:", err));
+  }, [user]);
 
   // ---------- Merge static data + TMDB data ----------
   const movies = useMemo(
@@ -217,10 +264,10 @@ export default function Home() {
           castList: t.castList.length ? t.castList : m.castList || [],
         };
       }),
-    [tmdbData]
+    [baseMovies, tmdbData]
   );
 
-  const selectedMovie = useMemo(() => movies.find((m) => m.id === selectedId) || null, [movies, selectedId]);
+  const selectedMovie = useMemo(() => movies.find((m) => String(m.id) === String(selectedId)) || null, [movies, selectedId]);
 
   // ---------- URL sync (?movie=ID / ?actor=Name) ----------
   useEffect(() => {
@@ -238,15 +285,13 @@ export default function Home() {
       setShowRequest(false);
 
       if (movieId) {
-        const found = baseMovies.find((m) => String(m.id) === String(movieId));
-        if (found) {
-          setSelectedId(found.id);
-          setSelectedActor(null);
-          setSelectedSeason(firstSeasonNo(found));
-          setSelectedEpisode(firstEpisodeNo(found));
-          setSelectedQuality(firstQuality(found.seasons?.[0]?.episodes?.[0] || found));
-          return;
-        }
+        const found = baseRef.current.find((m) => String(m.id) === String(movieId));
+        setSelectedId(found ? found.id : movieId); // admin titles may still be loading
+        setSelectedActor(null);
+        setSelectedSeason(firstSeasonNo(found));
+        setSelectedEpisode(firstEpisodeNo(found));
+        setSelectedQuality(firstQuality(found?.seasons?.[0]?.episodes?.[0] || found));
+        return;
       }
       if (actorParam) {
         setSelectedActor(actorParam);
@@ -812,6 +857,14 @@ export default function Home() {
                       >
                         🎯 My requests
                       </button>
+                      {isAdminEmail(user.email) && (
+                        <a
+                          href="/admin"
+                          className="block w-full text-left mt-1 px-3 py-2.5 rounded-xl text-sm text-red-400 font-semibold hover:bg-white/10 transition cursor-pointer"
+                        >
+                          🛠️ Admin panel
+                        </a>
+                      )}
                       <button
                         onClick={async () => {
                           setOpenMenu(null);
