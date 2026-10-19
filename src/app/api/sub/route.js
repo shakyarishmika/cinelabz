@@ -7,7 +7,7 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 
-export const runtime = "nodejs";
+// (No `runtime` export: Node.js is the default, and Next 16 "cacheComponents" does not allow it.)
 
 const MAX_BYTES = 2 * 1024 * 1024; // subtitle files are small
 const MAX_REDIRECTS = 3;
