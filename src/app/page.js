@@ -1176,6 +1176,7 @@ export default function Home() {
                 src={playUrl}
                 poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 subtitles={subtitleList}
+                title={downloadTitle}
                 storageKey={`${selectedMovie.id}-${activeEpisode ? `${activeSeason.number}-${activeEpisode.number}` : "m"}`}
               />
             )}
