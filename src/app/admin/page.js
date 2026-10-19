@@ -42,6 +42,8 @@ function parseServers(text) {
     })
     .filter(Boolean);
 }
+const validTelegram = (u) => !u || /^https?:\/\/(t|telegram)\.me\//i.test(u);
+const TG_ERR = "Telegram link must look like https://t.me/YourBot?start=abc";
 const serversToText = (list) =>
   (list || []).map((s) => [s.name, s.quality || "", s.size || "", s.url].join(" | ")).join("\n");
 
@@ -235,7 +237,7 @@ function TitleForm({ initial, onDone }) {
     videoUrl: initial?.videoUrl || "",
     subtitleUrl: initial?.subtitleUrl || "",
     servers: serversToText(initial?.downloads?.direct),
-    telegramCode: initial?.downloads?.telegramCode || "",
+    telegramUrl: initial?.downloads?.telegramUrl || "",
     streamCode: initial?.streamCode || "",
   }));
   const [saving, setSaving] = useState(false);
@@ -250,7 +252,8 @@ function TitleForm({ initial, onDone }) {
     if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
-    const hasDownloads = direct.length > 0 || f.telegramCode.trim();
+    if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
+    const hasDownloads = direct.length > 0 || f.telegramUrl.trim();
     const payload = {
       type: f.type,
       title: f.title.trim(),
@@ -269,7 +272,7 @@ function TitleForm({ initial, onDone }) {
         : {
             videoUrl: f.videoUrl.trim(),
             streamCode: f.streamCode.trim(),
-            downloads: hasDownloads ? { direct, telegramCode: f.telegramCode.trim() } : null,
+            downloads: hasDownloads ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
           }),
     };
 
@@ -373,8 +376,8 @@ function TitleForm({ initial, onDone }) {
       </div>
 
       <div>
-        <label className={labelCls}>Subtitle (.vtt) URL</label>
-        <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…/sinhala.vtt" className={inputCls} />
+        <label className={labelCls}>Subtitle file link (.srt / .vtt)</label>
+        <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…/subtitle.srt" className={inputCls} />
       </div>
 
       {isSeries ? (
@@ -388,7 +391,7 @@ function TitleForm({ initial, onDone }) {
             <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Telegram stream code (MKV/MP4 + subtitle)</label>
+            <label className={labelCls}>Telegram stream code (video only, optional)</label>
             <input value={f.streamCode} onChange={set("streamCode")} placeholder="m_inception" className={inputCls} />
             <p className="text-[11px] text-gray-500 mt-1">Code from stream_files.json. If set, it is used instead of the video link.</p>
           </div>
@@ -404,9 +407,9 @@ function TitleForm({ initial, onDone }) {
             <p className="text-[11px] text-gray-500 mt-1">One per line: Name | Quality | Size | Link</p>
           </div>
           <div>
-            <label className={labelCls}>Telegram code</label>
-            <input value={f.telegramCode} onChange={set("telegramCode")} placeholder="m_inception" className={inputCls} />
-            <p className="text-[11px] text-gray-500 mt-1">Same code as in your bot's files.json</p>
+            <label className={labelCls}>Telegram link (your bot)</label>
+            <input value={f.telegramUrl} onChange={set("telegramUrl")} placeholder="https://t.me/YourBot?start=abc" className={inputCls} />
+            <p className="text-[11px] text-gray-500 mt-1">The link that opens your bot. The bot then sends the files.</p>
           </div>
         </>
       )}
@@ -429,7 +432,7 @@ function TitleForm({ initial, onDone }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", streamCode: "", subtitleUrl: "", servers: "", telegramCode: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", streamCode: "", subtitleUrl: "", servers: "", telegramUrl: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -445,6 +448,7 @@ function EpisodesManager({ title, onBack }) {
     if (!f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
+    if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
     const episode = {
       number: eNo,
       title: f.name.trim() || `Episode ${eNo}`,
@@ -452,7 +456,7 @@ function EpisodesManager({ title, onBack }) {
       videoUrl: f.videoUrl.trim(),
       streamCode: f.streamCode.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
-      downloads: direct.length || f.telegramCode.trim() ? { direct, telegramCode: f.telegramCode.trim() } : null,
+      downloads: direct.length || f.telegramUrl.trim() ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
     };
 
     const next = seasons.map((s) => ({ ...s, episodes: [...s.episodes] }));
@@ -496,7 +500,7 @@ function EpisodesManager({ title, onBack }) {
       streamCode: ep.streamCode || "",
       subtitleUrl: ep.subtitleUrl || "",
       servers: serversToText(ep.downloads?.direct),
-      telegramCode: ep.downloads?.telegramCode || "",
+      telegramUrl: ep.downloads?.telegramUrl || "",
     });
 
   return (
@@ -553,11 +557,11 @@ function EpisodesManager({ title, onBack }) {
           <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>Telegram stream code (MKV/MP4 + subtitle)</label>
+          <label className={labelCls}>Telegram stream code (video only, optional)</label>
           <input value={f.streamCode} onChange={set("streamCode")} placeholder="show_s1e1" className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>Subtitle (.vtt) URL</label>
+          <label className={labelCls}>Subtitle file link (.srt / .vtt)</label>
           <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…" className={inputCls} />
         </div>
         <div>
@@ -565,8 +569,8 @@ function EpisodesManager({ title, onBack }) {
           <textarea value={f.servers} onChange={set("servers")} rows={3} placeholder={"Server 1 | 720p | 400 MB | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
         </div>
         <div>
-          <label className={labelCls}>Telegram code</label>
-          <input value={f.telegramCode} onChange={set("telegramCode")} placeholder="show_s1e1" className={inputCls} />
+          <label className={labelCls}>Telegram link (your bot)</label>
+          <input value={f.telegramUrl} onChange={set("telegramUrl")} placeholder="https://t.me/YourBot?start=abc" className={inputCls} />
         </div>
         {err && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">{err}</p>}
         <button type="submit" disabled={saving} className={`${redBtn} w-full`}>

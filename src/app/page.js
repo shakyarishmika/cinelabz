@@ -495,14 +495,12 @@ export default function Home() {
     : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
   const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
-  // Telegram stream: video + subtitle come from the stream server using one code
+  // Telegram stream: the VIDEO can come from the stream server using one code
   const streamCode = source?.streamCode;
   const useStream = !!(streamCode && STREAM_BASE);
   const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
-  const subtitleList = [
-    ...(useStream ? [{ label: "Sinhala (Telegram)", url: `${STREAM_BASE}/sub/${encodeURIComponent(streamCode)}.vtt` }] : []),
-    ...(subtitleUrl ? [{ label: "Sinhala", url: subtitleUrl }] : []),
-  ];
+  // Subtitles always come from the subtitle FILE LINK (not from inside the .mkv)
+  const subtitleList = subtitleUrl ? [{ label: "Subtitles", url: subtitleUrl }] : [];
   const downloadTitle = activeEpisode
     ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
     : selectedMovie?.title;
@@ -1190,7 +1188,7 @@ export default function Home() {
             )}
 
             {/* Download: Direct (servers popup) + Telegram bot */}
-            <DownloadButtons downloads={source?.downloads} title={downloadTitle} />
+            <DownloadButtons downloads={source?.downloads} title={downloadTitle} subtitleUrl={subtitleUrl} />
           </div>
 
           {/* DETAILS + CAST */}

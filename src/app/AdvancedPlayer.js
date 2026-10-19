@@ -51,6 +51,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const [rate, setRate] = useState(1);
   const [failed, setFailed] = useState(false);
   const [vttUrl, setVttUrl] = useState("");
+  const [subFailed, setSubFailed] = useState(false);
 
   const subsKey = JSON.stringify(subtitles);
   const current = tracks.find((t) => t.id === active) || null;
@@ -61,10 +62,11 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     let alive = true;
     setTracks([]);
     setActive("off");
+    setSubFailed(false);
     Promise.all(
       subtitles.map(async (s, i) => {
         try {
-          const r = await fetch(s.url);
+          const r = await fetch(`/api/sub?url=${encodeURIComponent(s.url)}`); // proxy: works with any link
           if (!r.ok) throw new Error(String(r.status));
           return { id: `remote-${i}`, label: s.label || `Subtitle ${i + 1}`, raw: await r.text() };
         } catch {
@@ -75,6 +77,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       if (!alive) return;
       const ok = list.filter(Boolean);
       setTracks(ok);
+      setSubFailed(subtitles.length > 0 && ok.length === 0);
       if (ok[0]) setActive(ok[0].id);
     });
     return () => {
@@ -193,7 +196,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           onTimeUpdate={onTimeUpdate}
           onError={() => setFailed(true)}
         >
-          {vttUrl && <track key={vttUrl} kind="subtitles" src={vttUrl} srcLang="si" label={current?.label || "Subtitles"} default />}
+          {vttUrl && <track key={vttUrl} kind="subtitles" src={vttUrl} srcLang="en" label={current?.label || "Subtitles"} default />}
         </video>
 
         {failed && (
@@ -253,6 +256,9 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           </button>
         )}
       </div>
+      {subFailed && (
+        <p className="text-xs text-yellow-400">Subtitle couldn't be loaded. Check the subtitle file link (it must be a direct link to a .srt or .vtt file).</p>
+      )}
     </div>
   );
 }
