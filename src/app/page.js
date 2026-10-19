@@ -392,10 +392,18 @@ export default function Home() {
   const showHero = selectedType === "all" && !isSearchActive;
   const showTrending = !isSearchActive && selectedType !== "all";
 
-  // Top 10 lists are picked (and ordered) by the id arrays in moviesData.js
-  const pickByIds = (ids) => ids.map((id) => movies.find((m) => m.id === id)).filter(Boolean).slice(0, 10);
-  const trendingMovies = pickByIds(trendingMovieIds);
-  const trendingSeries = pickByIds(trendingSeriesIds);
+  // Top 10 lists: titles marked "Trending" in the admin panel (ordered by their position number).
+  // If none are marked, the newest titles are shown instead.
+  const pickTrending = (type, legacyIds) => {
+    const flagged = movies
+      .filter((m) => m.type === type && m.trending)
+      .sort((a, b) => (a.trendingRank ?? 999) - (b.trendingRank ?? 999));
+    const legacy = legacyIds.map((id) => movies.find((m) => m.id === id)).filter((m) => m && !flagged.includes(m));
+    const picked = [...flagged, ...legacy];
+    return (picked.length ? picked : movies.filter((m) => m.type === type)).slice(0, 10);
+  };
+  const trendingMovies = pickTrending("movie", trendingMovieIds);
+  const trendingSeries = pickTrending("series", trendingSeriesIds);
 
   // Hero banner rotates through the trending lists (movie #1, series #1, movie #2, series #2, ...)
   const heroList = [];

@@ -42,6 +42,20 @@ function parseServers(text) {
     })
     .filter(Boolean);
 }
+// "1080p | https://..." (one per line)  <->  { "1080p": "https://..." }
+function parseQualityLinks(text) {
+  const out = {};
+  (text || "").split("\n").forEach((line) => {
+    const i = line.indexOf("|");
+    if (i < 0) return;
+    const label = line.slice(0, i).trim().replace(/[./]/g, "-");
+    const url = line.slice(i + 1).trim();
+    if (label && /^https?:\/\//i.test(url)) out[label] = url;
+  });
+  return out;
+}
+const qualityLinksToText = (obj) => Object.entries(obj || {}).map(([k, v]) => `${k} | ${v}`).join("\n");
+const QUALITY_HINT = "One per line, e.g.  1080p | https://…   (shows a quality picker in the player; used instead of the single link)";
 const validTelegram = (u) => !u || /^https?:\/\/(t|telegram)\.me\//i.test(u);
 const TG_ERR = "Telegram link must look like https://t.me/YourBot?start=abc";
 const serversToText = (list) =>
@@ -235,6 +249,9 @@ function TitleForm({ initial, onDone }) {
     image: initial?.image || "",
     sinhalaDescription: initial?.sinhalaDescription || "",
     videoUrl: initial?.videoUrl || "",
+    qualityLinks: qualityLinksToText(initial?.videoLinks),
+    trending: !!initial?.trending,
+    trendingRank: initial?.trendingRank ?? "",
     subtitleUrl: initial?.subtitleUrl || "",
     servers: serversToText(initial?.downloads?.direct),
     telegramUrl: initial?.downloads?.telegramUrl || "",
@@ -249,7 +266,9 @@ function TitleForm({ initial, onDone }) {
     e.preventDefault();
     setErr("");
     if (f.title.trim().length < 2) return setErr("Enter a title.");
-    if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
+    const links = parseQualityLinks(f.qualityLinks);
+    if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length)
+      return setErr("Enter a video link, quality links, or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
     if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
@@ -267,10 +286,13 @@ function TitleForm({ initial, onDone }) {
       image: f.image.trim(),
       sinhalaDescription: f.sinhalaDescription.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
+      trending: !!f.trending,
+      trendingRank: f.trendingRank ? Number(f.trendingRank) : null,
       ...(isSeries
         ? { status: f.status }
         : {
             videoUrl: f.videoUrl.trim(),
+            videoLinks: Object.keys(links).length ? links : null,
             streamCode: f.streamCode.trim(),
             downloads: hasDownloads ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
           }),
@@ -365,6 +387,19 @@ function TitleForm({ initial, onDone }) {
         )}
       </div>
 
+      <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
+        <label className="flex items-center gap-3 text-sm font-semibold cursor-pointer">
+          <input type="checkbox" checked={f.trending} onChange={(e) => setF((p) => ({ ...p, trending: e.target.checked }))} className="w-4 h-4 accent-red-600" />
+          ⭐ Show in Trending Top 10 (and the home banner)
+        </label>
+        {f.trending && (
+          <div>
+            <label className={labelCls}>Position (1 = first, optional)</label>
+            <input value={f.trendingRank} onChange={(e) => setF((p) => ({ ...p, trendingRank: e.target.value.replace(/\D/g, "").slice(0, 2) }))} inputMode="numeric" placeholder="1" className={inputCls} />
+          </div>
+        )}
+      </div>
+
       <div>
         <label className={labelCls}>Sinhala description</label>
         <textarea value={f.sinhalaDescription} onChange={set("sinhalaDescription")} rows={3} className={`${inputCls} resize-none`} />
@@ -389,6 +424,11 @@ function TitleForm({ initial, onDone }) {
           <div>
             <label className={labelCls}>Video link (mp4 or mega.nz/embed)</label>
             <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Quality links (optional)</label>
+            <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…\n480p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
+            <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
           </div>
           <div>
             <label className={labelCls}>Telegram stream code (video only, optional)</label>
@@ -432,7 +472,7 @@ function TitleForm({ initial, onDone }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", streamCode: "", subtitleUrl: "", servers: "", telegramUrl: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", subtitleUrl: "", servers: "", telegramUrl: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -445,7 +485,9 @@ function EpisodesManager({ title, onBack }) {
     const sNo = parseInt(f.season, 10);
     const eNo = parseInt(f.ep, 10);
     if (!(sNo >= 1) || !(eNo >= 1)) return setErr("Season and episode numbers must be 1 or more.");
-    if (!f.videoUrl.trim() && !f.streamCode.trim()) return setErr("Enter a video link or a Telegram stream code.");
+    const links = parseQualityLinks(f.qualityLinks);
+    if (!f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length)
+      return setErr("Enter a video link, quality links, or a Telegram stream code.");
 
     const direct = parseServers(f.servers);
     if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
@@ -454,6 +496,7 @@ function EpisodesManager({ title, onBack }) {
       title: f.name.trim() || `Episode ${eNo}`,
       duration: f.duration.trim(),
       videoUrl: f.videoUrl.trim(),
+      videoLinks: Object.keys(links).length ? links : null,
       streamCode: f.streamCode.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
       downloads: direct.length || f.telegramUrl.trim() ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
@@ -497,6 +540,7 @@ function EpisodesManager({ title, onBack }) {
       name: ep.title || "",
       duration: ep.duration || "",
       videoUrl: ep.videoUrl || "",
+      qualityLinks: qualityLinksToText(ep.videoLinks),
       streamCode: ep.streamCode || "",
       subtitleUrl: ep.subtitleUrl || "",
       servers: serversToText(ep.downloads?.direct),
@@ -557,6 +601,11 @@ function EpisodesManager({ title, onBack }) {
           <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
         </div>
         <div>
+          <label className={labelCls}>Quality links (optional)</label>
+          <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
+          <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
+        </div>
+        <div>
           <label className={labelCls}>Telegram stream code (video only, optional)</label>
           <input value={f.streamCode} onChange={set("streamCode")} placeholder="show_s1e1" className={inputCls} />
         </div>
@@ -614,10 +663,10 @@ function TitlesPanel({ items }) {
           ✓ Series saved. Add its episodes now →
         </button>
       )}
-      <p className="text-xs text-gray-500">Titles added here appear on the site straight away. Titles from moviesData.js are not editable here.</p>
+      <p className="text-xs text-gray-500">Everything you add or change here shows on the site straight away. ☆ Trending puts a title in the Top 10 and the home banner.</p>
 
       {items.length === 0 ? (
-        <Empty>No titles added from the admin panel yet.</Empty>
+        <Empty>No titles yet. Tap “+ Add movie / TV series” to add your first one.</Empty>
       ) : (
         <ul className="space-y-3">
           {items.map((t) => (
@@ -639,6 +688,9 @@ function TitlesPanel({ items }) {
                 )}
                 <button onClick={() => setView({ mode: "form", id: t.id })} className={ghostBtn}>
                   Edit
+                </button>
+                <button onClick={() => updateDoc(doc(db, "titles", t.id), { trending: !t.trending }).catch(fail)} className={ghostBtn}>
+                  {t.trending ? "★ Trending" : "☆ Trending"}
                 </button>
                 <a href={`/?movie=${t.id}`} target="_blank" rel="noopener noreferrer" className={ghostBtn}>
                   View
