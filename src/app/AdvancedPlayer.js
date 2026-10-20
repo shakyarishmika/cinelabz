@@ -39,14 +39,54 @@ function parseCues(raw) {
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Keep only <i> <b> <u>; everything else is escaped / removed (safe for innerHTML)
+// colours allowed in subtitles: WebVTT names + a few common ones + #hex
+const COLOR_NAMES = new Set(["white", "lime", "cyan", "red", "yellow", "magenta", "blue", "black", "orange", "pink", "gray", "grey", "green", "purple"]);
+const colorOf = (c) => {
+  const x = (c || "").trim().toLowerCase();
+  return COLOR_NAMES.has(x) || /^#[0-9a-f]{3,8}$/.test(x) ? x : null;
+};
+
+// Subtitle text -> safe HTML.
+// Supports <i> <b> <u>, WebVTT colours <c.yellow>..</c> (also <c.yellow.bg_black>),
+// SRT <font color="#ff0">..</font>. Every other tag is removed, all text is escaped.
 function cueHtml(text) {
-  const s = text.replace(/\{\\[^}]*\}/g, "").replace(/<(?!\/?(?:i|b|u)>)[^>]*>/gi, "");
-  return s
-    .split(/(<\/?(?:i|b|u)>)/i)
-    .map((p, i) => (i % 2 ? p.toLowerCase() : esc(p)))
-    .join("")
-    .replace(/\n/g, "<br/>");
+  const s = text.replace(/\{\\[^}]*\}/g, "");
+  let out = "";
+  for (const part of s.split(/(<[^>]*>)/)) {
+    if (!part) continue;
+    if (part[0] !== "<") {
+      out += esc(part);
+      continue;
+    }
+    const m = part.match(/^<\s*(\/?)\s*([a-z0-9]+)([^>]*)>$/i);
+    if (!m) continue;
+    const close = !!m[1];
+    const tag = m[2].toLowerCase();
+    const rest = m[3];
+    if (tag === "i" || tag === "b" || tag === "u") out += close ? `</${tag}>` : `<${tag}>`;
+    else if (tag === "c") {
+      if (close) out += "</span>";
+      else {
+        let fg = null;
+        let bg = null;
+        rest.split(".").forEach((cls) => {
+          cls = cls.trim().toLowerCase();
+          if (cls.startsWith("bg_")) bg = bg || colorOf(cls.slice(3));
+          else fg = fg || colorOf(cls);
+        });
+        out += `<span style="${fg ? `color:${fg};` : ""}${bg ? `background:${bg};padding:0 .2em;` : ""}">`;
+      }
+    } else if (tag === "font") {
+      if (close) out += "</span>";
+      else {
+        const c = rest.match(/color\s*=\s*["']?([#a-z0-9]+)/i);
+        const fg = c ? colorOf(c[1]) : null;
+        out += `<span style="${fg ? `color:${fg};` : ""}">`;
+      }
+    }
+    // everything else (<v Name>, <lang>, <00:00:01.000> ...) is dropped
+  }
+  return out.replace(/\n/g, "<br/>");
 }
 
 // indexes of the cues visible at time t (cues sorted by start)
@@ -172,6 +212,12 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
   const [failed, setFailed] = useState(false);
+  const [errCode, setErrCode] = useState(0);
+  const [logoFailed, setLogoFailed] = useState(false);
+  // an http:// video link is blocked on an https:// site (Safari) -> try the https:// version
+  const [playSrc] = useState(() =>
+    typeof window !== "undefined" && window.location.protocol === "https:" && /^http:\/\//i.test(src) ? src.replace(/^http:/i, "https:") : src
+  );
   // interface
   const [showUI, setShowUI] = useState(true);
   const [panel, setPanel] = useState(false);
@@ -547,7 +593,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       {/* ---------- video (no native controls => no native download menu) ---------- */}
       <video
         ref={videoRef}
-        src={src}
+        src={playSrc}
         poster={poster}
         playsInline
         preload="metadata"
@@ -569,7 +615,10 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           setVolume(e.currentTarget.volume);
           setMuted(e.currentTarget.muted);
         }}
-        onError={() => setFailed(true)}
+        onError={(e) => {
+          setErrCode(e.currentTarget.error?.code || 0);
+          setFailed(true);
+        }}
       />
 
       {/* ---------- tap / click surface ---------- */}
@@ -621,9 +670,13 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           </button>
         )}
         <p className="text-sm sm:text-base font-bold truncate flex-1 drop-shadow">{title}</p>
-        <span className="text-xs sm:text-sm font-black tracking-wider drop-shadow">
-          <span className="text-red-500">Cine</span>Labz
-        </span>
+        {logoFailed ? (
+          <span className="text-xs sm:text-sm font-black tracking-wider drop-shadow">
+            <span className="text-red-500">Cine</span>Labz
+          </span>
+        ) : (
+          <img src="/logo.png" alt="CineLabz" className="h-6 sm:h-8 w-auto object-contain drop-shadow-lg" onError={() => setLogoFailed(true)} />
+        )}
       </div>
 
       {/* ---------- centre buttons ---------- */}
@@ -814,7 +867,11 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         <div className="absolute inset-0 z-40 bg-black/90 flex flex-col items-center justify-center text-center gap-2 p-6">
           <p className="font-black text-lg">This browser can't play this video</p>
           <p className="text-xs text-gray-400 max-w-md">
-            Try Chrome or Edge. For Safari / iPhone the video must be MP4 (H.264 + AAC). MKV, HEVC (x265) and 10-bit files don't play in most browsers.
+            For Safari / iPhone the video must be an MP4 (H.264 + AAC) on an https:// link. MKV, HEVC (x265) and 10-bit files don't play in most browsers.
+            The server must also allow range requests and hotlinking.
+          </p>
+          <p className="text-[11px] text-gray-500 font-mono">
+            error {errCode}: {{ 1: "loading stopped", 2: "network / blocked link", 3: "can't decode (codec)", 4: "link or format not supported" }[errCode] || "unknown"}
           </p>
         </div>
       )}

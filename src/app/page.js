@@ -71,6 +71,19 @@ const onImgError = (fallback) => (e) => {
   if (e.target.src !== fallback) e.target.src = fallback;
 };
 
+// TMDB info saved in this browser (read once)
+let savedTmdb = null;
+const loadSavedTmdb = () => {
+  if (savedTmdb === null) {
+    try {
+      savedTmdb = JSON.parse(localStorage.getItem("cl-tmdb-v1") || "{}") || {};
+    } catch {
+      savedTmdb = {};
+    }
+  }
+  return savedTmdb;
+};
+
 // First season / episode numbers of a title (used to reset the picker)
 const firstSeasonNo = (item) => item?.seasons?.[0]?.number ?? 1;
 const firstEpisodeNo = (item) => item?.seasons?.[0]?.episodes?.[0]?.number ?? 1;
@@ -121,6 +134,7 @@ async function fetchTmdbData(item) {
 export default function Home() {
   const [tmdbData, setTmdbData] = useState({}); // { [movie.id]: data }
   const [dbTitles, setDbTitles] = useState([]); // titles added from /admin (Firestore)
+  const [titlesReady, setTitlesReady] = useState(!db); // false until the first list has arrived
   const [selectedId, setSelectedId] = useState(null);
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -193,11 +207,37 @@ export default function Home() {
 
   // ---------- Titles added from the admin panel (Firestore) ----------
   useEffect(() => {
+    // 1) show the list saved on this device straight away
+    try {
+      const cached = JSON.parse(localStorage.getItem("cl-titles-v1") || "null");
+      if (Array.isArray(cached) && cached.length) {
+        setDbTitles(cached);
+        setTitlesReady(true);
+      }
+    } catch {
+      /* ignore */
+    }
     if (!db) return;
+    // 2) then keep it fresh from Firestore
     return onSnapshot(
       collection(db, "titles"),
-      (snap) => setDbTitles(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
-      (err) => console.error("Titles listener error:", err)
+      (snap) => {
+        const list = snap.docs.map((d) => {
+          const data = d.data();
+          return { ...data, id: d.id, createdAt: data.createdAt?.seconds ? { seconds: data.createdAt.seconds } : undefined };
+        });
+        setDbTitles(list);
+        setTitlesReady(true);
+        try {
+          localStorage.setItem("cl-titles-v1", JSON.stringify(list));
+        } catch {
+          /* ignore */
+        }
+      },
+      (err) => {
+        console.error("Titles listener error:", err);
+        setTitlesReady(true);
+      }
     );
   }, []);
 
@@ -221,13 +261,36 @@ export default function Home() {
       aliveRef.current = false;
     };
   }, []);
+  // posters / cast saved on this device appear instantly (no waiting for TMDB)
   useEffect(() => {
+    setTmdbData((prev) => ({ ...loadSavedTmdb(), ...prev }));
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const keep = {};
+        Object.keys(tmdbData).forEach((id) => {
+          if (!titlesReady || baseRef.current.some((m) => String(m.id) === id)) keep[id] = tmdbData[id];
+        });
+        if (Object.keys(keep).length) localStorage.setItem("cl-tmdb-v1", JSON.stringify(keep));
+      } catch {
+        /* ignore */
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [tmdbData, titlesReady]);
+
+  useEffect(() => {
+    const saved = loadSavedTmdb();
     baseMovies.forEach((item) => {
-      if (fetchedRef.current.has(item.id)) return;
-      fetchedRef.current.add(item.id);
+      // key changes when the admin edits the TMDB id / name / year -> then we fetch again
+      const ck = `${item.id}|${item.type}|${item.tmdbId || ""}|${item.tmdbQuery || ""}|${item.year || ""}|${item.tmdbId ? "" : item.title}`;
+      if (fetchedRef.current.has(ck)) return;
+      fetchedRef.current.add(ck);
+      if (saved[item.id]?._k === ck) return; // saved copy is up to date
       fetchTmdbData(item)
         .then((data) => {
-          if (data && aliveRef.current) setTmdbData((prev) => ({ ...prev, [item.id]: data }));
+          if (data && aliveRef.current) setTmdbData((prev) => ({ ...prev, [item.id]: { ...data, _k: ck } }));
         })
         .catch((err) => console.error(`TMDB error (${item.title}):`, err));
     });
@@ -503,6 +566,9 @@ export default function Home() {
     : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
   const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
+  // the file people download (sent as .zip with an .srt inside); falls back to the player subtitle
+  const subtitleDownloadUrl = source?.subtitleDownloadUrl || selectedMovie?.subtitleDownloadUrl || subtitleUrl;
+  const showSkeleton = !titlesReady && baseMovies.length === 0;
   // Telegram stream: the VIDEO can come from the stream server using one code
   const streamCode = source?.streamCode;
   const useStream = !!(streamCode && STREAM_BASE);
@@ -1197,7 +1263,7 @@ export default function Home() {
             )}
 
             {/* Download: Direct (servers popup) + Telegram bot */}
-            <DownloadButtons downloads={source?.downloads} title={downloadTitle} subtitleUrl={subtitleUrl} />
+            <DownloadButtons downloads={source?.downloads} title={downloadTitle} subtitleUrl={subtitleDownloadUrl} />
           </div>
 
           {/* DETAILS + CAST */}
@@ -1279,9 +1345,15 @@ export default function Home() {
           {/* COMMENTS (sign in to post) */}
           <Comments contentId={selectedMovie.id} user={user} authLoading={authLoading} onSignIn={openSignIn} />
         </div>
+      ) : selectedId && !selectedMovie && !titlesReady ? (
+        /* opened a movie link directly: wait for the list instead of flashing the home page */
+        <div className="pt-48 flex justify-center">
+          <div className="w-12 h-12 rounded-full border-4 border-red-600/30 border-t-red-600 animate-spin" />
+        </div>
       ) : (
         /* --- 3. HOME --- */
         <div>
+          {showHero && !heroItem && showSkeleton && <div className="h-[100svh] w-full bg-neutral-900 animate-pulse" />}
           {showHero && heroItem && (
             <div
               className="relative h-[100svh] w-full flex items-end p-6 sm:p-16 overflow-hidden"
@@ -1379,7 +1451,19 @@ export default function Home() {
               )}
             </div>
 
-            {filteredMovies.length === 0 ? (
+            {showSkeleton ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="rounded-2xl overflow-hidden bg-neutral-900 border border-white/5 animate-pulse">
+                    <div className="aspect-[2/3] bg-neutral-800" />
+                    <div className="p-3 sm:p-4 space-y-2">
+                      <div className="h-3 w-2/3 bg-neutral-800 rounded" />
+                      <div className="h-4 w-full bg-neutral-800 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredMovies.length === 0 ? (
               <div className="text-center py-20 text-gray-400">
                 <p className="text-lg">No movies or series found! 🔍</p>
               </div>

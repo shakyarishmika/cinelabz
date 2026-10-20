@@ -100,6 +100,105 @@ function decode(buf) {
   }
 }
 
+// ---------- WebVTT -> SRT (some old devices can't read .vtt) ----------
+const pad2 = (n, l = 2) => String(n).padStart(l, "0");
+function toSecs(t) {
+  const m = t.trim().match(/^(?:(\d+):)?(\d+):(\d+)[.,](\d{1,3})/);
+  if (!m) return 0;
+  return Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(`0.${m[4]}`);
+}
+function fmtSrt(sec) {
+  const total = Math.max(0, Math.round(sec * 1000));
+  return `${pad2(Math.floor(total / 3600000))}:${pad2(Math.floor((total % 3600000) / 60000))}:${pad2(Math.floor((total % 60000) / 1000))},${pad2(total % 1000, 3)}`;
+}
+const COLOR_NAMES = new Set(["white", "lime", "cyan", "red", "yellow", "magenta", "blue", "black", "orange", "pink", "gray", "grey", "green", "purple"]);
+// <c.yellow>..</c> -> <font color="yellow">..</font>; keep <i> <b> <u>; drop everything else
+function srtText(text) {
+  return text.replace(/\{\\[^}]*\}/g, "").replace(/<(\/?)\s*([a-z0-9]+)([^>]*)>/gi, (m, slash, tag, rest) => {
+    tag = tag.toLowerCase();
+    if (tag === "i" || tag === "b" || tag === "u") return `<${slash}${tag}>`;
+    if (tag === "c") {
+      if (slash) return "</font>";
+      const color = rest.split(".").map((x) => x.trim().toLowerCase()).find((x) => COLOR_NAMES.has(x));
+      return color ? `<font color="${color}">` : "<font>";
+    }
+    if (tag === "font") return slash ? "</font>" : m;
+    return "";
+  });
+}
+const isVtt = (t) => /^\uFEFF?\s*WEBVTT/.test(t);
+function vttToSrt(vtt) {
+  const out = [];
+  let n = 0;
+  for (const block of vtt.replace(/\r/g, "").split(/\n{2,}/)) {
+    const lines = block.split("\n");
+    const i = lines.findIndex((l) => l.includes("-->"));
+    if (i < 0) continue;
+    const [a, b] = lines[i].split("-->");
+    const body = srtText(lines.slice(i + 1).join("\n")).trim();
+    if (!body) continue;
+    out.push(`${++n}\n${fmtSrt(toSecs(a))} --> ${fmtSrt(toSecs(b.trim().split(/\s+/)[0]))}\n${body}\n`);
+  }
+  return out.join("\n");
+}
+
+// ---------- tiny ZIP writer (one file, no compression) ----------
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function makeZip(name, data) {
+  const nameBuf = Buffer.from(name, "utf8");
+  const crc = crc32(data);
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0x0800, 6); // UTF-8 file name
+  local.writeUInt16LE(0, 8); // stored
+  local.writeUInt16LE(dosTime, 10);
+  local.writeUInt16LE(dosDate, 12);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(nameBuf.length, 26);
+
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0x0800, 8);
+  central.writeUInt16LE(dosTime, 12);
+  central.writeUInt16LE(dosDate, 14);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(nameBuf.length, 28);
+
+  const localPart = Buffer.concat([local, nameBuf, data]);
+  const centralPart = Buffer.concat([central, nameBuf]);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(centralPart.length, 12);
+  end.writeUInt32LE(localPart.length, 16);
+  return Buffer.concat([localPart, centralPart, end]);
+}
+
 const bad = (msg, status = 400) => new Response(msg, { status, headers: { "Content-Type": "text/plain; charset=utf-8" } });
 
 export async function GET(req) {
@@ -120,12 +219,22 @@ export async function GET(req) {
   }
 
   if (searchParams.get("download")) {
-    const ext = (target.split("?")[0].match(/\.(srt|vtt|ass|ssa|sub)$/i) || [".srt"])[0].toLowerCase();
-    const base = (searchParams.get("name") || "subtitle").replace(/[^\w .()-]/g, "_").slice(0, 80);
-    return new Response(file.buf, {
+    // Always delivered as a .zip. A ready-made .zip link is passed through;
+    // anything else becomes <name>.srt (UTF-8) inside a zip. .vtt is converted to .srt first.
+    const base = (searchParams.get("name") || "subtitle").replace(/[^\w .()-]/g, "_").trim().slice(0, 80) || "subtitle";
+    let out;
+    if (file.buf[0] === 0x50 && file.buf[1] === 0x4b) {
+      out = file.buf;
+    } else {
+      let text = decode(file.buf);
+      if (isVtt(text)) text = vttToSrt(text);
+      const srt = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text.replace(/\r?\n/g, "\r\n"), "utf8")]);
+      out = makeZip(`${base}.srt`, srt);
+    }
+    return new Response(out, {
       headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${base}${ext}"`,
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${base}.zip"`,
         "Cache-Control": "public, s-maxage=3600",
       },
     });

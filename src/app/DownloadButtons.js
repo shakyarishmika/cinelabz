@@ -9,7 +9,7 @@ export const TELEGRAM_BOT = "";
 //   direct: [{ name: "Server 1", quality: "1080p", size: "2.1 GB", url: "https://..." }],
 //   telegramUrl: "https://t.me/YourBot?start=abc"     // your own bot link
 // }
-// subtitleUrl = link of the subtitle file (.srt / .vtt) -> "Download subtitle" in the popup
+// subtitleUrl = link used for "Download subtitle": it is sent as a .zip with the .srt inside
 export default function DownloadButtons({ downloads, title, subtitleUrl }) {
   const [open, setOpen] = useState(false);
 
@@ -113,7 +113,7 @@ export default function DownloadButtons({ downloads, title, subtitleUrl }) {
                   className="flex items-center justify-between gap-3 bg-white/5 hover:bg-red-600/20 border border-white/10 hover:border-red-600/50 rounded-2xl px-4 py-3.5 transition"
                 >
                   <span className="font-semibold text-sm">⬇ Download subtitle</span>
-                  <span className="text-xs text-gray-400">.srt</span>
+                  <span className="text-xs text-gray-400">.zip (.srt)</span>
                 </a>
               </>
             )}

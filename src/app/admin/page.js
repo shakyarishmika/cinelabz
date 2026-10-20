@@ -253,6 +253,7 @@ function TitleForm({ initial, onDone }) {
     trending: !!initial?.trending,
     trendingRank: initial?.trendingRank ?? "",
     subtitleUrl: initial?.subtitleUrl || "",
+    subtitleDownloadUrl: initial?.subtitleDownloadUrl || "",
     servers: serversToText(initial?.downloads?.direct),
     telegramUrl: initial?.downloads?.telegramUrl || "",
     streamCode: initial?.streamCode || "",
@@ -286,6 +287,7 @@ function TitleForm({ initial, onDone }) {
       image: f.image.trim(),
       sinhalaDescription: f.sinhalaDescription.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
+      subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       trending: !!f.trending,
       trendingRank: f.trendingRank ? Number(f.trendingRank) : null,
       ...(isSeries
@@ -411,8 +413,13 @@ function TitleForm({ initial, onDone }) {
       </div>
 
       <div>
-        <label className={labelCls}>Subtitle file link (.srt / .vtt)</label>
-        <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…/subtitle.srt" className={inputCls} />
+        <label className={labelCls}>Subtitle for the player (.vtt or .srt link)</label>
+        <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…/subtitle.vtt" className={inputCls} />
+      </div>
+      <div>
+        <label className={labelCls}>Subtitle for download (.srt or .zip link, optional)</label>
+        <input value={f.subtitleDownloadUrl} onChange={set("subtitleDownloadUrl")} placeholder="https://…/subtitle.srt" className={inputCls} />
+        <p className="text-[11px] text-gray-500 mt-1">People download this as a .zip. If you leave it empty, the player subtitle is converted to .srt and zipped automatically.</p>
       </div>
 
       {isSeries ? (
@@ -472,7 +479,7 @@ function TitleForm({ initial, onDone }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", subtitleUrl: "", servers: "", telegramUrl: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", subtitleUrl: "", subtitleDownloadUrl: "", servers: "", telegramUrl: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -499,6 +506,7 @@ function EpisodesManager({ title, onBack }) {
       videoLinks: Object.keys(links).length ? links : null,
       streamCode: f.streamCode.trim(),
       subtitleUrl: f.subtitleUrl.trim(),
+      subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       downloads: direct.length || f.telegramUrl.trim() ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
     };
 
@@ -543,6 +551,7 @@ function EpisodesManager({ title, onBack }) {
       qualityLinks: qualityLinksToText(ep.videoLinks),
       streamCode: ep.streamCode || "",
       subtitleUrl: ep.subtitleUrl || "",
+      subtitleDownloadUrl: ep.subtitleDownloadUrl || "",
       servers: serversToText(ep.downloads?.direct),
       telegramUrl: ep.downloads?.telegramUrl || "",
     });
@@ -610,8 +619,13 @@ function EpisodesManager({ title, onBack }) {
           <input value={f.streamCode} onChange={set("streamCode")} placeholder="show_s1e1" className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>Subtitle file link (.srt / .vtt)</label>
+          <label className={labelCls}>Subtitle for the player (.vtt or .srt link)</label>
           <input value={f.subtitleUrl} onChange={set("subtitleUrl")} placeholder="https://…" className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Subtitle for download (.srt or .zip link, optional)</label>
+          <input value={f.subtitleDownloadUrl} onChange={set("subtitleDownloadUrl")} placeholder="https://…/subtitle.srt" className={inputCls} />
+          <p className="text-[11px] text-gray-500 mt-1">People download this as a .zip. If you leave it empty, the player subtitle is converted to .srt and zipped automatically.</p>
         </div>
         <div>
           <label className={labelCls}>Direct download servers</label>
