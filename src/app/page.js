@@ -1604,7 +1604,7 @@ export default function Home() {
           <p className="text-xs sm:text-sm text-gray-400 text-center sm:text-left">
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
             <span className="mx-2 text-gray-600">|</span>
-            Developed by <span className="text-white font-semibold">Cloud + Shakya</span>
+            Developed by <span className="text-white font-semibold">Shakya Rishmika</span>
           </p>
 
           <div className="flex items-center gap-3">
