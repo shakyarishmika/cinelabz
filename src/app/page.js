@@ -11,6 +11,7 @@ import DownloadButtons from "./DownloadButtons";
 import Comments from "./Comments";
 import SeasonEpisodes from "./SeasonEpisodes";
 import TelegramLogo from "./TelegramLogo";
+import NotificationBell from "./NotificationBell";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -603,6 +604,27 @@ export default function Home() {
     : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
   const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
+  // Hide the real video link from the page / network tab: swap it for a short-lived signed token.
+  // (Not done for Mega embeds, which are already an iframe to Mega's own player.)
+  const [tokenSrc, setTokenSrc] = useState(null);
+  useEffect(() => {
+    if (!playUrl || isMegaEmbed) {
+      setTokenSrc(null);
+      return;
+    }
+    let alive = true;
+    const getToken = () =>
+      fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
+        .then((r) => r.json())
+        .then((j) => alive && j.src && setTokenSrc(j.src))
+        .catch(() => {});
+    getToken();
+    const t = setInterval(getToken, 5 * 60 * 1000); // refresh before the old token expires
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [playUrl, isMegaEmbed]);
   // the file people download (sent as .zip with an .srt inside); falls back to the player subtitle
   const subtitleDownloadUrl = source?.subtitleDownloadUrl || selectedMovie?.subtitleDownloadUrl || subtitleUrl;
   const showSkeleton = !titlesReady && baseMovies.length === 0;
@@ -923,6 +945,7 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-3 sm:gap-4">
+              <NotificationBell user={user} />
               <button
                 onClick={() => setIsSearching(true)}
                 className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white transition-all shadow-md"
@@ -1303,8 +1326,8 @@ export default function Home() {
               </div>
             ) : (
               <AdvancedPlayer
-                key={playUrl}
-                src={playUrl}
+                key={tokenSrc || playUrl}
+                src={tokenSrc || playUrl}
                 poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 subtitles={subtitleList}
                 title={downloadTitle}

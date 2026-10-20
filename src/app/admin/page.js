@@ -838,6 +838,82 @@ function TitlesPanel({ items }) {
 }
 
 // ======================================================================
+// NOTIFY: push an announcement (site notification + optional Telegram)
+// ======================================================================
+function NotifyPanel() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [url, setUrl] = useState("/");
+  const [alsoTelegram, setAlsoTelegram] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+
+  const send = async (e) => {
+    e.preventDefault();
+    setErr("");
+    setResult(null);
+    if (!title.trim() || !body.trim()) return setErr("Title and message are required.");
+    setSending(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const r = await fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: title.trim(), body: body.trim(), url: url.trim() || "/", alsoTelegram }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.reason || "failed");
+      setResult(j);
+      setTitle("");
+      setBody("");
+    } catch (e2) {
+      setErr(e2.message === "failed" ? "Couldn't send. Check VAPID / Telegram env vars are set." : e2.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <form onSubmit={send} className={`${cardCls} p-5 space-y-4`}>
+      <h3 className="font-black text-lg">Send a notification</h3>
+      <p className="text-xs text-gray-500">
+        Goes to everyone who enabled site notifications (the 🔔 icon). Tick the box below to also send it to everyone who connected
+        Telegram.
+      </p>
+      <div>
+        <label className={labelCls}>Title *</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="New on CineLabz!" className={inputCls} />
+      </div>
+      <div>
+        <label className={labelCls}>Message *</label>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={180} rows={3} placeholder="Inception (2010) just got added." className={`${inputCls} resize-none`} />
+      </div>
+      <div>
+        <label className={labelCls}>Link opened on tap</label>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="/?movie=abc123" className={inputCls} />
+      </div>
+      <label className="flex items-center gap-3 text-sm font-semibold cursor-pointer bg-black/30 border border-white/10 rounded-xl p-4">
+        <input type="checkbox" checked={alsoTelegram} onChange={(e) => setAlsoTelegram(e.target.checked)} className="w-4 h-4 accent-sky-400" />
+        <span className="inline-flex items-center gap-2">
+          <TelegramLogo className="w-4 h-4 text-sky-400" /> Also send to Telegram
+        </span>
+      </label>
+      {err && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">{err}</p>}
+      {result && (
+        <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3">
+          ✓ Sent to {result.push.sent} browser{result.push.sent === 1 ? "" : "s"}
+          {alsoTelegram ? `, ${result.telegram.sent} on Telegram` : ""}.
+        </p>
+      )}
+      <button type="submit" disabled={sending} className={`${redBtn} w-full`}>
+        {sending ? "Sending…" : "Send notification"}
+      </button>
+    </form>
+  );
+}
+
+// ======================================================================
 // PAGE
 // ======================================================================
 export default function AdminPage() {
@@ -910,6 +986,7 @@ export default function AdminPage() {
 
   const tabs = [
     ["dashboard", "Dashboard"],
+    ["notify", "Notify"],
     ["requests", `Requests${pending ? ` (${pending})` : ""}`],
     ["comments", "Comments"],
     ["users", "Users"],
@@ -970,6 +1047,7 @@ export default function AdminPage() {
         {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} adminUser={user} />}
         {tab === "users" && <UsersPanel items={users} />}
         {tab === "titles" && <TitlesPanel items={titles} />}
+        {tab === "notify" && <NotifyPanel />}
       </main>
     </div>
   );
