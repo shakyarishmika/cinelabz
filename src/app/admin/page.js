@@ -3,7 +3,7 @@
 // src/app/admin/page.js  →  opens at  /admin
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { useAuth } from "../useAuth";
 import { isAdminEmail } from "../adminConfig";
 import { movies as staticMovies } from "../moviesData";
@@ -61,8 +61,15 @@ const TG_ERR = "Telegram link must look like https://t.me/YourBot?start=abc";
 const serversToText = (list) =>
   (list || []).map((s) => [s.name, s.quality || "", s.size || "", s.url].join(" | ")).join("\n");
 
-function Avatar({ name, photo, size = "w-10 h-10" }) {
+function Avatar({ name, photo, size = "w-10 h-10", admin = false }) {
   const [failed, setFailed] = useState(false);
+  if (admin) {
+    return (
+      <div className={`${size} rounded-full overflow-hidden bg-neutral-900 border-2 border-red-600 shadow-md shadow-red-600/30 flex items-center justify-center text-xs font-black text-red-500 flex-shrink-0`}>
+        {failed ? "A" : <img src="/AdminLogo.png" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
+      </div>
+    );
+  }
   return (
     <div className={`${size} rounded-full overflow-hidden bg-red-600 flex items-center justify-center text-sm font-bold flex-shrink-0`}>
       {photo && !failed ? (
@@ -74,6 +81,13 @@ function Avatar({ name, photo, size = "w-10 h-10" }) {
   );
 }
 
+const TgChip = ({ u }) =>
+  u?.tgId ? (
+    <span className="inline-block text-[10px] font-bold bg-sky-400/15 border border-sky-400/40 text-sky-300 px-2 py-0.5 rounded-full">
+      TG: {u.tgUsername ? `@${u.tgUsername}` : "connected"}
+    </span>
+  ) : null;
+
 function Empty({ children }) {
   return <p className="text-sm text-gray-500 text-center py-10 bg-neutral-900/40 border border-white/5 rounded-2xl">{children}</p>;
 }
@@ -81,15 +95,41 @@ function Empty({ children }) {
 // ======================================================================
 // REQUESTS
 // ======================================================================
-function RequestsPanel({ items }) {
+function RequestsPanel({ items, users }) {
   const [filter, setFilter] = useState("all");
+  const [note, setNote] = useState("");
+  const userOf = (uid) => users.find((u) => u.id === uid);
   const list = items.filter((r) => filter === "all" || (r.status || "pending") === filter);
 
-  const setStatus = (id, status) => updateDoc(doc(db, "requests", id), { status }).catch(fail);
+  // save the status, then tell the user on Telegram (if they connected it)
+  const setStatus = async (id, status) => {
+    try {
+      await updateDoc(doc(db, "requests", id), { status });
+    } catch (e) {
+      return fail(e);
+    }
+    let msg = "Status saved (Telegram not sent).";
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const r = await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ requestId: id, event: "status" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j.sent) msg = "✓ Status saved. The user was notified on Telegram.";
+      else if (j.reason === "no-telegram") msg = "Status saved. This user hasn't connected Telegram.";
+    } catch {
+      /* keep the default message */
+    }
+    setNote(msg);
+    setTimeout(() => setNote(""), 4500);
+  };
   const remove = (id) => window.confirm("Delete this request?") && deleteDoc(doc(db, "requests", id)).catch(fail);
 
   return (
     <div className="space-y-4">
+      {note && <p className="text-xs font-semibold text-sky-300 bg-sky-400/10 border border-sky-400/30 rounded-xl px-4 py-2.5">{note}</p>}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {["all", ...STATUSES].map((s) => (
           <button
@@ -124,8 +164,9 @@ function RequestsPanel({ items }) {
                 </span>
               </div>
               {r.note && <p className="text-sm text-gray-300 bg-black/30 rounded-xl px-3 py-2 break-words">{r.note}</p>}
-              <p className="text-xs text-gray-500 truncate">
-                By {r.userName || "—"} • {r.userEmail || "—"}
+              <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                <span className="truncate">By {r.userName || "—"} • {r.userEmail || "—"}</span>
+                <TgChip u={userOf(r.uid)} />
               </p>
               <div className="flex gap-2">
                 <select value={r.status || "pending"} onChange={(e) => setStatus(r.id, e.target.value)} className={`${inputCls} !w-auto flex-1`}>
@@ -150,34 +191,108 @@ function RequestsPanel({ items }) {
 // ======================================================================
 // COMMENTS
 // ======================================================================
-function CommentsPanel({ items, titleName }) {
+function CommentsPanel({ items, titleName, adminUser }) {
   const [q, setQ] = useState("");
+  const [replyTo, setReplyTo] = useState(null); // { rootId, toId, name, contentId }
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
   const s = q.trim().toLowerCase();
-  const list = items.filter(
-    (c) => !s || (c.text || "").toLowerCase().includes(s) || (c.userName || "").toLowerCase().includes(s) || (titleName[String(c.contentId)] || "").toLowerCase().includes(s)
+
+  const match = (c) =>
+    !s ||
+    (c.text || "").toLowerCase().includes(s) ||
+    (c.userName || "").toLowerCase().includes(s) ||
+    (titleName[String(c.contentId)] || "").toLowerCase().includes(s);
+
+  const roots = items.filter((c) => !c.parentId);
+  const repliesOf = {};
+  items
+    .filter((c) => c.parentId)
+    .sort((a, b) => secs(a.createdAt) - secs(b.createdAt))
+    .forEach((c) => (repliesOf[c.parentId] = [...(repliesOf[c.parentId] || []), c]));
+  const shown = roots.filter((c) => match(c) || (repliesOf[c.id] || []).some(match));
+
+  const removeThread = (c) =>
+    window.confirm(c.parentId ? "Delete this reply?" : "Delete this comment and its replies?") &&
+    Promise.all([deleteDoc(doc(db, "comments", c.id)), ...(repliesOf[c.id] || []).map((k) => deleteDoc(doc(db, "comments", k.id)))]).catch(fail);
+
+  // reply as "Admin" (shows AdminLogo + Admin badge on the site)
+  const send = async (e) => {
+    e.preventDefault();
+    const clean = text.trim();
+    if (!clean || !replyTo) return;
+    setSending(true);
+    try {
+      await addDoc(collection(db, "comments"), {
+        contentId: String(replyTo.contentId),
+        parentId: replyTo.rootId,
+        ...(replyTo.toId !== replyTo.rootId ? { replyToName: replyTo.name } : {}),
+        uid: adminUser.uid,
+        userName: "Admin",
+        photoURL: "",
+        isAdmin: true,
+        text: clean.slice(0, 500),
+        createdAt: serverTimestamp(),
+      });
+      setReplyTo(null);
+      setText("");
+    } catch (e2) {
+      fail(e2);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const one = (c, rootId, isReply) => (
+    <div className="flex gap-3">
+      <Avatar name={c.userName} photo={c.photoURL} admin={!!c.isAdmin} size={isReply ? "w-8 h-8" : "w-10 h-10"} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm">
+          <span className="font-bold">{c.userName}</span>
+          {c.isAdmin && <span className="ml-1.5 text-[10px] font-black uppercase bg-red-600 px-1.5 py-0.5 rounded-md align-middle">Admin</span>}{" "}
+          <span className="text-xs text-gray-500">{when(c.createdAt)}</span>
+        </p>
+        {!isReply && <p className="text-xs text-red-400 truncate">on {titleName[String(c.contentId)] || `#${c.contentId}`}</p>}
+        {isReply && c.replyToName && <p className="text-[11px] text-gray-500">↪ replying to {c.replyToName}</p>}
+        <p className="text-sm text-gray-300 mt-1 break-words whitespace-pre-wrap">{c.text}</p>
+        <div className="flex items-center gap-4 mt-1.5">
+          <button onClick={() => { setReplyTo({ rootId, toId: c.id, name: c.userName, contentId: c.contentId }); setText(""); }} className="text-xs font-semibold text-sky-300 hover:text-sky-200 cursor-pointer">
+            Reply as Admin
+          </button>
+          <button onClick={() => removeThread(c)} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">
+            Delete
+          </button>
+        </div>
+        {replyTo?.toId === c.id && (
+          <form onSubmit={send} className="mt-2 space-y-2">
+            <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={2} placeholder={`Reply to ${c.userName} as Admin…`} className={`${inputCls} resize-none`} />
+            <div className="flex gap-2">
+              <button type="submit" disabled={sending} className={redBtn}>{sending ? "Sending…" : "Send reply"}</button>
+              <button type="button" onClick={() => setReplyTo(null)} className={ghostBtn}>Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   );
-  const remove = (id) => window.confirm("Delete this comment?") && deleteDoc(doc(db, "comments", id)).catch(fail);
 
   return (
     <div className="space-y-4">
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search comments, users, titles…" className={inputCls} />
-      {list.length === 0 ? (
+      {shown.length === 0 ? (
         <Empty>No comments.</Empty>
       ) : (
         <ul className="space-y-3">
-          {list.map((c) => (
-            <li key={c.id} className={`${cardCls} p-4 flex gap-3`}>
-              <Avatar name={c.userName} photo={c.photoURL} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm">
-                  <span className="font-bold">{c.userName}</span> <span className="text-xs text-gray-500">{when(c.createdAt)}</span>
-                </p>
-                <p className="text-xs text-red-400 truncate">on {titleName[String(c.contentId)] || `#${c.contentId}`}</p>
-                <p className="text-sm text-gray-300 mt-1 break-words whitespace-pre-wrap">{c.text}</p>
-              </div>
-              <button onClick={() => remove(c.id)} className="self-start bg-red-600/15 text-red-400 hover:bg-red-600 hover:text-white rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer">
-                Delete
-              </button>
+          {shown.map((c) => (
+            <li key={c.id} className={`${cardCls} p-4 space-y-3`}>
+              {one(c, c.id, false)}
+              {(repliesOf[c.id] || []).length > 0 && (
+                <div className="ml-12 pl-4 border-l-2 border-white/10 space-y-4">
+                  {(repliesOf[c.id] || []).map((r) => (
+                    <div key={r.id}>{one(r, c.id, true)}</div>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -212,7 +327,7 @@ function UsersPanel({ items }) {
                   {u.blocked && <span className="ml-1 text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full align-middle">BLOCKED</span>}
                 </p>
                 <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                <p className="text-[11px] text-gray-500">Last login: {when(u.lastLogin)}</p>
+                <p className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">Last login: {when(u.lastLogin)} <TgChip u={u} /></p>
               </div>
               <button
                 onClick={() => toggle(u)}
@@ -850,8 +965,8 @@ export default function AdminPage() {
             ))}
           </div>
         )}
-        {tab === "requests" && <RequestsPanel items={requests} />}
-        {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} />}
+        {tab === "requests" && <RequestsPanel items={requests} users={users} />}
+        {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} adminUser={user} />}
         {tab === "users" && <UsersPanel items={users} />}
         {tab === "titles" && <TitlesPanel items={titles} />}
       </main>

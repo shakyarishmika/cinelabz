@@ -16,7 +16,9 @@ const STATUS_STYLES = {
 const inputCls =
   "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-600/70 focus:ring-1 focus:ring-red-600/40 transition";
 
-export default function RequestPage({ user, authLoading, onSignIn, onBack }) {
+// tg = { username, name } when the user's Telegram is connected, else null
+// onConnectTelegram = starts the connect flow (null when the notification bot isn't set up)
+export default function RequestPage({ user, authLoading, onSignIn, onBack, tg, onConnectTelegram }) {
   const [type, setType] = useState("movie");
   const [title, setTitle] = useState("");
   const [year, setYear] = useState("");
@@ -37,12 +39,26 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack }) {
       q,
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        rows.sort((a, b) => (b.createdAt?.seconds ?? Infinity) - (a.createdAt?.seconds ?? Infinity));
+        rows.sort((a, b) => (b.createdAt?.seconds ?? 1e12) - (a.createdAt?.seconds ?? 1e12));
         setMine(rows);
       },
       (err) => console.error("Requests listener error:", err)
     );
   }, [user]);
+
+  // Tell the user on Telegram that we got the request (only if their Telegram is connected)
+  const notifyReceived = async (requestId) => {
+    try {
+      const token = await user.getIdToken();
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ requestId, event: "received" }),
+      });
+    } catch {
+      /* the request itself is already saved; ignore */
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,7 +75,7 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack }) {
 
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "requests"), {
+      const ref = await addDoc(collection(db, "requests"), {
         uid: user.uid,
         userName: user.displayName || "",
         userEmail: user.email || "",
@@ -75,9 +91,16 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack }) {
       setYear("");
       setNote("");
       setMessage({ ok: true, text: "Request sent! We'll add it as soon as possible. 🎬" });
+      if (tg) notifyReceived(ref.id);
     } catch (err) {
       console.error("Request error:", err);
-      setMessage({ ok: false, text: "Couldn't send your request. Please try again." });
+      setMessage({
+        ok: false,
+        text:
+          err.code === "permission-denied"
+            ? "You can't send requests right now (blocked or rules not published)."
+            : "Couldn't send your request. Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -117,6 +140,24 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack }) {
         </div>
       ) : (
         <>
+          {/* TELEGRAM UPDATES */}
+          {tg ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-sky-400/15 border border-sky-400/40 text-sky-300 px-4 py-2.5 text-xs sm:text-sm font-bold">
+              <span>✈ TG: {tg.username ? `@${tg.username}` : tg.name || "account"} connected</span>
+              <span className="font-normal text-sky-200/70">We'll message you when your request status changes.</span>
+            </div>
+          ) : onConnectTelegram ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl bg-sky-400/10 border border-sky-400/30 px-4 py-3">
+              <p className="text-sm text-sky-200 sm:mr-auto">Get the status of your requests on Telegram.</p>
+              <button
+                onClick={onConnectTelegram}
+                className="bg-sky-400/20 hover:bg-sky-400/30 border border-sky-400/40 text-sky-200 px-5 py-2 rounded-full text-xs font-bold cursor-pointer transition"
+              >
+                ✈ Connect Telegram
+              </button>
+            </div>
+          ) : null}
+
           {/* REQUEST FORM */}
           <form
             onSubmit={handleSubmit}

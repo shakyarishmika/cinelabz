@@ -18,6 +18,8 @@ import RequestPage from "./RequestPage";
 const TMDB_API_KEY = "11b62acb01b14ccb50539617ec367524";
 // Telegram stream server (stream_server.py), e.g. https://your-stream-server.onrender.com
 const STREAM_BASE = (process.env.NEXT_PUBLIC_STREAM_BASE || "").replace(/\/$/, "");
+// Username (without @) of the Telegram NOTIFICATION bot -> enables "Connect Telegram"
+const BOT_USERNAME = (process.env.NEXT_PUBLIC_TG_BOT_USERNAME || "").replace(/^@/, "");
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 
@@ -135,6 +137,7 @@ export default function Home() {
   const [tmdbData, setTmdbData] = useState({}); // { [movie.id]: data }
   const [dbTitles, setDbTitles] = useState([]); // titles added from /admin (Firestore)
   const [titlesReady, setTitlesReady] = useState(!db); // false until the first list has arrived
+  const [tg, setTg] = useState(null); // connected Telegram of the signed-in user
   const [selectedId, setSelectedId] = useState(null);
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -295,6 +298,22 @@ export default function Home() {
         .catch((err) => console.error(`TMDB error (${item.title}):`, err));
     });
   }, [baseMovies]);
+
+  // ---------- Telegram connection of the signed-in user (written by the bot) ----------
+  useEffect(() => {
+    if (!user || !db) {
+      setTg(null);
+      return;
+    }
+    return onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        const d = snap.data();
+        setTg(d?.tgId ? { id: d.tgId, username: d.tgUsername || "", name: d.tgName || "" } : null);
+      },
+      () => setTg(null)
+    );
+  }, [user]);
 
   // ---------- Save the signed-in user so the admin can manage users ----------
   useEffect(() => {
@@ -502,6 +521,23 @@ export default function Home() {
     setShowSignIn(true);
   };
 
+  // Make a one-time code, then open the notification bot with it (the bot links this account)
+  const connectTelegram = async () => {
+    if (!user || !db || !BOT_USERNAME) return;
+    const w = window.open("about:blank", "_blank"); // open now so Safari doesn't block it
+    try {
+      const code = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+      await setDoc(doc(db, "tgLinks", code), { uid: user.uid, expiresAt: Date.now() + 15 * 60 * 1000, createdAt: serverTimestamp() });
+      const url = `https://t.me/${BOT_USERNAME}?start=${code}`;
+      if (w) w.location.href = url;
+      else window.location.href = url;
+      setOpenMenu(null);
+    } catch (err) {
+      w?.close();
+      alert(`Couldn't start the Telegram connection (${err.code || err.message}).`);
+    }
+  };
+
   const handleSelectMovie = (item) => {
     setShowRequest(false);
     setSelectedId(item.id);
@@ -674,6 +710,13 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white selection:bg-red-600 selection:text-white font-sans overflow-x-hidden">
+      {/* Web-app settings (iPhone "Add to Home Screen" opens full screen without the address bar) */}
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-title" content="CineLabz" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+      <meta name="theme-color" content="#000000" />
+
       {/* --- MORPHING NAVBAR --- */}
       <nav
         style={{
@@ -934,6 +977,22 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {tg ? (
+                        <div className="mt-3 flex items-center gap-2 rounded-full bg-sky-400/15 border border-sky-400/40 text-sky-300 px-3.5 py-2 text-xs font-bold">
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="currentColor" aria-hidden="true">
+                            <path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z" />
+                          </svg>
+                          <span className="truncate">TG: {tg.username ? `@${tg.username}` : tg.name || "account"} connected</span>
+                        </div>
+                      ) : BOT_USERNAME ? (
+                        <button
+                          onClick={connectTelegram}
+                          className="w-full mt-3 flex items-center justify-center gap-2 rounded-full bg-sky-400/10 hover:bg-sky-400/20 border border-sky-400/30 text-sky-300 px-3.5 py-2 text-xs font-bold cursor-pointer transition"
+                        >
+                          ✈ Connect Telegram for request updates
+                        </button>
+                      ) : null}
+
                       <button
                         onClick={openRequest}
                         className="w-full text-left mt-3 px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:bg-white/10 transition cursor-pointer"
@@ -1117,7 +1176,14 @@ export default function Home() {
       {/* --- 1. ACTOR PAGE --- */}
       {showRequest ? (
         /* --- 0. REQUEST PAGE (sign-in required) --- */
-        <RequestPage user={user} authLoading={authLoading} onSignIn={openSignIn} onBack={handleBackToHome} />
+        <RequestPage
+          user={user}
+          authLoading={authLoading}
+          onSignIn={openSignIn}
+          onBack={handleBackToHome}
+          tg={tg}
+          onConnectTelegram={BOT_USERNAME ? connectTelegram : null}
+        />
       ) : selectedActor ? (
         <div className="pt-28 sm:pt-36 w-full min-w-0 max-w-7xl mx-auto px-6 pb-16 space-y-8">
           <button

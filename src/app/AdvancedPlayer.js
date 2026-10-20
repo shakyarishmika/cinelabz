@@ -201,6 +201,8 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const lastTap = useRef({ t: 0 });
   const lastSave = useRef(0);
   const lastActive = useRef("off");
+  const watchdog = useRef(null);
+  const nudges = useRef(0);
 
   // playback
   const [playing, setPlaying] = useState(false);
@@ -227,6 +229,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const [flash, setFlash] = useState(null);
   const [touch, setTouch] = useState(false);
   const [pipOK, setPipOK] = useState(false);
+  const [a2hs, setA2hs] = useState(false); // "add to home screen" hint (iPhone only)
   const [cw, setCw] = useState(640);
   // subtitles
   const [tracks, setTracks] = useState([]); // [{ id, label, cues }]
@@ -270,6 +273,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     () => () => {
       clearTimeout(hideTimer.current);
       clearTimeout(flashTimer.current);
+      clearTimeout(watchdog.current);
     },
     []
   );
@@ -345,8 +349,19 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
       return;
     }
+    const enterPseudo = () => {
+      setPseudoFs(true);
+      // iPhone Safari can't hide its address bar: suggest installing the site as an app
+      try {
+        const iPhone = /iPhone|iPod/i.test(navigator.userAgent);
+        const standalone = navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+        if (iPhone && !standalone && localStorage.getItem("cl-a2hs-off") !== "1") setA2hs(true);
+      } catch {
+        /* ignore */
+      }
+    };
     const req = box?.requestFullscreen || box?.webkitRequestFullscreen;
-    if (!req) return setPseudoFs(true); // iPhone: no element fullscreen -> fill the screen ourselves
+    if (!req) return enterPseudo(); // iPhone: no element fullscreen -> fill the screen ourselves
     try {
       await req.call(box);
       try {
@@ -355,9 +370,13 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         /* not supported */
       }
     } catch {
-      setPseudoFs(true);
+      enterPseudo();
     }
   };
+
+  useEffect(() => {
+    if (!pseudoFs) setA2hs(false);
+  }, [pseudoFs]);
 
   // ---------- load subtitle files (through /api/sub so any link works)
   useEffect(() => {
@@ -415,6 +434,27 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     if (videoRef.current) videoRef.current.playbackRate = rate;
   }, [rate]);
 
+  // After a seek some files keep playing (time + sound + subtitles) but the picture stays black.
+  // If no video frame is painted for 2.5s while the time is moving, nudge the decoder (max 2 times).
+  const armWatchdog = () => {
+    const v = videoRef.current;
+    if (!v || typeof v.requestVideoFrameCallback !== "function") return;
+    clearTimeout(watchdog.current);
+    const t0 = v.currentTime;
+    let frame = false;
+    v.requestVideoFrameCallback(() => {
+      frame = true;
+      nudges.current = 0;
+    });
+    watchdog.current = setTimeout(() => {
+      if (frame || v.paused || v.ended) return;
+      if (v.currentTime - t0 < 0.4) return; // still buffering, not a decoder problem
+      if (nudges.current >= 2) return;
+      nudges.current += 1;
+      v.currentTime = v.currentTime + 0.05;
+    }, 2500);
+  };
+
   // ---------- actions
   const togglePlay = () => {
     const v = videoRef.current;
@@ -427,6 +467,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.max(0, Math.min(v.duration || Infinity, v.currentTime + sec));
+    nudges.current = 0;
     setFlash({ side: sec < 0 ? "left" : "right", key: Date.now() });
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 650);
@@ -517,6 +558,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     setDrag(null);
     const v = videoRef.current;
     if (v && duration) v.currentTime = r * duration;
+    nudges.current = 0;
     poke();
   };
 
@@ -606,7 +648,10 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         onWaiting={() => setWaiting(true)}
         onPlaying={() => setWaiting(false)}
         onCanPlay={() => setWaiting(false)}
-        onSeeked={() => setWaiting(false)}
+        onSeeked={() => {
+          setWaiting(false);
+          armWatchdog();
+        }}
         onTimeUpdate={onTimeUpdate}
         onProgress={onTimeUpdate}
         onLoadedMetadata={onLoadedMetadata}
@@ -631,7 +676,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           className={`absolute top-0 bottom-0 w-1/3 z-[14] flex items-center justify-center pointer-events-none ${flash.side === "left" ? "left-0" : "right-0"}`}
           style={{ animation: "clflash .65s ease-out forwards" }}
         >
-          <div className="flex flex-col items-center gap-1 bg-white/15 backdrop-blur rounded-full px-5 py-4">
+          <div className="flex flex-col items-center gap-1 bg-white/20 rounded-full px-5 py-4">
             <ISkip dir={flash.side === "left" ? "back" : "fwd"} className="w-8 h-8" />
           </div>
         </div>
@@ -684,7 +729,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         <button
           onClick={() => skip(-10)}
           aria-label="Back 10 seconds"
-          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/45 backdrop-blur border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
+          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
         >
           <ISkip dir="back" className="w-6 h-6 sm:w-8 sm:h-8" />
         </button>
@@ -698,7 +743,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         <button
           onClick={() => skip(10)}
           aria-label="Forward 10 seconds"
-          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/45 backdrop-blur border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
+          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
         >
           <ISkip dir="fwd" className="w-6 h-6 sm:w-8 sm:h-8" />
         </button>
@@ -789,7 +834,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       {/* ---------- settings panel ---------- */}
       {panel && (
         <div
-          className="absolute z-30 right-2 sm:right-4 bottom-[4.25rem] sm:bottom-20 w-[min(21rem,calc(100%-1rem))] max-h-[78%] overflow-y-auto rounded-2xl bg-neutral-950/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/70 p-4"
+          className="absolute z-30 right-2 sm:right-4 bottom-[4.25rem] sm:bottom-20 w-[min(21rem,calc(100%-1rem))] max-h-[78%] overflow-y-auto rounded-2xl bg-neutral-950/97 border border-white/10 shadow-2xl shadow-black/70 p-4"
           onPointerUp={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between">
@@ -858,6 +903,46 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
                 {r === 1 ? "Normal" : `${r}x`}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---------- iPhone: add to Home Screen hint ---------- */}
+      {a2hs && (
+        <div
+          className="absolute z-[45] top-3 inset-x-3 sm:inset-x-auto sm:right-4 sm:w-80 rounded-2xl bg-neutral-950/97 border border-red-600/50 shadow-2xl shadow-black/70 p-4"
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl leading-none">📲</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black">Get a true full screen</p>
+              <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                To hide Safari's address bar, add CineLabz to your Home Screen: tap{" "}
+                <span className="inline-flex align-middle mx-0.5">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Share">
+                    <path d="M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1" />
+                  </svg>
+                </span>{" "}
+                <b>Share</b>, then <b>Add to Home Screen</b>. Open CineLabz from there.
+              </p>
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.setItem("cl-a2hs-off", "1");
+                  } catch {
+                    /* ignore */
+                  }
+                  setA2hs(false);
+                }}
+                className="text-[11px] text-gray-500 hover:text-gray-300 underline mt-2 cursor-pointer"
+              >
+                Don't show again
+              </button>
+            </div>
+            <button onClick={() => setA2hs(false)} aria-label="Close" className="w-7 h-7 rounded-full bg-white/10 hover:bg-red-600 flex items-center justify-center transition cursor-pointer flex-shrink-0">
+              <IClose className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
