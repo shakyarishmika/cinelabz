@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TelegramLogo from "./TelegramLogo";
 
 // Only used for OLD data that has `telegramCode`. New titles use a full link (`telegramUrl`).
 export const TELEGRAM_BOT = "";
@@ -55,9 +56,9 @@ export default function DownloadButtons({ downloads, title, subtitleUrl }) {
               href={telegramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="bg-[#229ED9] hover:bg-[#1b8bbf] text-white px-5 py-3 rounded-xl text-sm font-bold text-center shadow-lg shadow-[#229ED9]/30 transition"
+              className="inline-flex items-center justify-center gap-2 bg-[#229ED9] hover:bg-[#1b8bbf] text-white px-5 py-3 rounded-xl text-sm font-bold text-center shadow-lg shadow-[#229ED9]/30 transition"
             >
-              Telegram
+              <TelegramLogo className="w-5 h-5" /> Telegram
             </a>
           )}
         </div>

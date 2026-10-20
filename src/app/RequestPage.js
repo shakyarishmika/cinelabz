@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "./firebase";
+import TelegramLogo from "./TelegramLogo";
 
 const LANGS = ["English", "Tamil", "Hindi", "Kannada", "Korean", "Other"];
 
@@ -143,7 +144,9 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack, tg, o
           {/* TELEGRAM UPDATES */}
           {tg ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-sky-400/15 border border-sky-400/40 text-sky-300 px-4 py-2.5 text-xs sm:text-sm font-bold">
-              <span>✈ TG: {tg.username ? `@${tg.username}` : tg.name || "account"} connected</span>
+              <span className="inline-flex items-center gap-2">
+                <TelegramLogo className="w-5 h-5" /> TG: {tg.username ? `@${tg.username}` : tg.name || "account"} connected
+              </span>
               <span className="font-normal text-sky-200/70">We'll message you when your request status changes.</span>
             </div>
           ) : onConnectTelegram ? (
@@ -151,9 +154,9 @@ export default function RequestPage({ user, authLoading, onSignIn, onBack, tg, o
               <p className="text-sm text-sky-200 sm:mr-auto">Get the status of your requests on Telegram.</p>
               <button
                 onClick={onConnectTelegram}
-                className="bg-sky-400/20 hover:bg-sky-400/30 border border-sky-400/40 text-sky-200 px-5 py-2 rounded-full text-xs font-bold cursor-pointer transition"
+                className="inline-flex items-center justify-center gap-2 bg-sky-400/20 hover:bg-sky-400/30 border border-sky-400/40 text-sky-200 px-5 py-2 rounded-full text-xs font-bold cursor-pointer transition"
               >
-                ✈ Connect Telegram
+                <TelegramLogo className="w-5 h-5" /> Connect Telegram
               </button>
             </div>
           ) : null}

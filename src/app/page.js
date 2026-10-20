@@ -10,6 +10,7 @@ import SignInModal from "./SignInModal";
 import DownloadButtons from "./DownloadButtons";
 import Comments from "./Comments";
 import SeasonEpisodes from "./SeasonEpisodes";
+import TelegramLogo from "./TelegramLogo";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -979,9 +980,7 @@ export default function Home() {
 
                       {tg ? (
                         <div className="mt-3 flex items-center gap-2 rounded-full bg-sky-400/15 border border-sky-400/40 text-sky-300 px-3.5 py-2 text-xs font-bold">
-                          <svg viewBox="0 0 24 24" className="w-4 h-4 flex-shrink-0" fill="currentColor" aria-hidden="true">
-                            <path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z" />
-                          </svg>
+                          <TelegramLogo className="w-5 h-5 flex-shrink-0" />
                           <span className="truncate">TG: {tg.username ? `@${tg.username}` : tg.name || "account"} connected</span>
                         </div>
                       ) : BOT_USERNAME ? (
@@ -989,7 +988,7 @@ export default function Home() {
                           onClick={connectTelegram}
                           className="w-full mt-3 flex items-center justify-center gap-2 rounded-full bg-sky-400/10 hover:bg-sky-400/20 border border-sky-400/30 text-sky-300 px-3.5 py-2 text-xs font-bold cursor-pointer transition"
                         >
-                          ✈ Connect Telegram for request updates
+                          <TelegramLogo className="w-5 h-5" /> Connect Telegram for request updates
                         </button>
                       ) : null}
 

@@ -1,11 +1,12 @@
 "use client";
 
-// src/app/admin/page.js  →  opens at  /admin ok
+// src/app/admin/page.js  →  opens at  /admin
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useAuth } from "../useAuth";
 import { isAdminEmail } from "../adminConfig";
+import TelegramLogo from "../TelegramLogo";
 import { movies as staticMovies } from "../moviesData";
 
 // ---------- small helpers ----------
@@ -83,8 +84,8 @@ function Avatar({ name, photo, size = "w-10 h-10", admin = false }) {
 
 const TgChip = ({ u }) =>
   u?.tgId ? (
-    <span className="inline-block text-[10px] font-bold bg-sky-400/15 border border-sky-400/40 text-sky-300 px-2 py-0.5 rounded-full">
-      TG: {u.tgUsername ? `@${u.tgUsername}` : "connected"}
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-sky-400/15 border border-sky-400/40 text-sky-300 px-2 py-0.5 rounded-full">
+      <TelegramLogo className="w-3 h-3" /> TG: {u.tgUsername ? `@${u.tgUsername}` : "connected"}
     </span>
   ) : null;
 

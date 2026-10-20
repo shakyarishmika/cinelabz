@@ -4,7 +4,7 @@
 //   event "received" : called by the user right after sending a request
 // The caller must send their Firebase ID token:  Authorization: Bearer <token>
 import { ADMIN_EMAILS } from "../../adminConfig";
-import { getAdmin } from "../../firebaseAdmin";
+import { getAdmin, verifyIdToken } from "../../firebaseAdmin";
 import { requestMessage, tgSend } from "../../telegram";
 
 const json = (body, status = 200) => Response.json(body, { status });
@@ -16,12 +16,13 @@ export async function POST(req) {
   } catch (e) {
     return json({ sent: false, reason: "server-not-configured" }, 500);
   }
-  const { auth, db } = admin;
+  const { db } = admin;
 
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   let who;
   try {
-    who = await auth.verifyIdToken(token);
+    const site = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get("origin") || new URL(req.url).origin;
+    who = await verifyIdToken(token, `${site.replace(/\/$/, "")}/`);
   } catch {
     return json({ sent: false, reason: "unauthorized" }, 401);
   }
