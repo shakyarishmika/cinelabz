@@ -1,6 +1,6 @@
 "use client";
 
-// Comments with replies. Replies from the admin show the AdminLogo.png in a red ring + "Admin" badge.
+// Comments with reply. Replies from the admin show the AdminLogo.png in a red ring + "Admin" badge.
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "./firebase";

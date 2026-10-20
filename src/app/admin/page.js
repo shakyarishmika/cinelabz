@@ -1,6 +1,6 @@
 "use client";
 
-// src/app/admin/page.js  →  opens at  /admin
+// src/app/admin/page.js  →  opens at  /admin ok
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";

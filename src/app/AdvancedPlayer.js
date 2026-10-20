@@ -7,7 +7,7 @@
 //    with size / delay / position / background settings built into the player
 //  - no native browser controls => no built-in "Download" menu
 //  - mobile: tap to show/hide controls, double-tap left/right to skip 10s,
-//    fullscreen fallback for iPhone
+//    fullscreen fallback for iPhone.
 //  - remembers where you stopped + your subtitle settings
 
 import { useCallback, useEffect, useRef, useState } from "react";
