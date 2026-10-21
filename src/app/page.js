@@ -604,6 +604,15 @@ export default function Home() {
     : source?.videoUrl;
   const isMegaEmbed = currentLink && currentLink.includes("mega.nz/embed");
   const subtitleUrl = source?.subtitleUrl || selectedMovie?.subtitleUrl;
+  // the file people download (sent as .zip with an .srt inside); falls back to the player subtitle
+  const subtitleDownloadUrl = source?.subtitleDownloadUrl || selectedMovie?.subtitleDownloadUrl || subtitleUrl;
+  const showSkeleton = !titlesReady && baseMovies.length === 0;
+  // Telegram stream: the VIDEO can come from the stream server using one code
+  const streamCode = source?.streamCode;
+  const useStream = !!(streamCode && STREAM_BASE);
+  const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
+  // Subtitles always come from the subtitle FILE LINK (not from inside the .mkv)
+  const subtitleList = subtitleUrl ? [{ label: "Subtitles", url: subtitleUrl }] : [];
   // Hide the real video link from the page / network tab: swap it for a short-lived signed token.
   // (Not done for Mega embeds, which are already an iframe to Mega's own player.)
   const [tokenSrc, setTokenSrc] = useState(null);
@@ -625,15 +634,6 @@ export default function Home() {
       clearInterval(t);
     };
   }, [playUrl, isMegaEmbed]);
-  // the file people download (sent as .zip with an .srt inside); falls back to the player subtitle
-  const subtitleDownloadUrl = source?.subtitleDownloadUrl || selectedMovie?.subtitleDownloadUrl || subtitleUrl;
-  const showSkeleton = !titlesReady && baseMovies.length === 0;
-  // Telegram stream: the VIDEO can come from the stream server using one code
-  const streamCode = source?.streamCode;
-  const useStream = !!(streamCode && STREAM_BASE);
-  const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
-  // Subtitles always come from the subtitle FILE LINK (not from inside the .mkv)
-  const subtitleList = subtitleUrl ? [{ label: "Subtitles", url: subtitleUrl }] : [];
   const downloadTitle = activeEpisode
     ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
     : selectedMovie?.title;
