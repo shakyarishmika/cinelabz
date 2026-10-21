@@ -914,6 +914,143 @@ function NotifyPanel() {
 }
 
 // ======================================================================
+// MESSAGES: "Contact us" conversations + reply (user gets a push / Telegram notification)
+// ======================================================================
+function MessagesPanel({ items }) {
+  const [openUid, setOpenUid] = useState(null);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [note, setNote] = useState("");
+
+  const threads = useMemo(() => {
+    const m = {};
+    items.forEach((x) => {
+      m[x.uid] = m[x.uid] || [];
+      m[x.uid].push(x);
+    });
+    return Object.entries(m)
+      .map(([uid, list]) => {
+        list.sort((a, b) => secs(a.createdAt) - secs(b.createdAt));
+        const last = list[list.length - 1];
+        const first = list.find((x) => x.from === "user") || list[0];
+        return { uid, list, last, name: first.userName || "User", email: first.userEmail || "", photo: first.photoURL || "", unread: last.from === "user" };
+      })
+      .sort((a, b) => secs(b.last.createdAt) - secs(a.last.createdAt));
+  }, [items]);
+
+  const t = threads.find((x) => x.uid === openUid) || null;
+
+  const reply = async (e) => {
+    e.preventDefault();
+    const clean = text.trim();
+    if (!clean || !t) return;
+    setSending(true);
+    setNote("");
+    try {
+      await addDoc(collection(db, "messages"), { uid: t.uid, from: "admin", userName: "Admin", text: clean.slice(0, 1000), createdAt: serverTimestamp() });
+      setText("");
+      let msg = "✓ Reply sent.";
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const r = await fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ event: "contactReply", uid: t.uid, text: clean }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j.ok) {
+          const parts = [];
+          if (j.push) parts.push(`${j.push} device${j.push === 1 ? "" : "s"} (notification)`);
+          if (j.telegram) parts.push("Telegram");
+          msg = parts.length ? `✓ Reply sent. Notified: ${parts.join(" + ")}.` : "✓ Reply sent. (The user has no notifications / Telegram turned on.)";
+        }
+      } catch {
+        /* the reply itself is saved */
+      }
+      setNote(msg);
+    } catch (e2) {
+      fail(e2);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const removeThread = (x) =>
+    window.confirm(`Delete the whole conversation with ${x.name}?`) &&
+    Promise.all(x.list.map((m) => deleteDoc(doc(db, "messages", m.id))))
+      .then(() => setOpenUid(null))
+      .catch(fail);
+
+  if (t) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setOpenUid(null); setNote(""); }} className={ghostBtn}>← All messages</button>
+          <button onClick={() => removeThread(t)} className="ml-auto bg-red-600/15 text-red-400 hover:bg-red-600 hover:text-white rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer">Delete</button>
+        </div>
+        <div className="flex items-center gap-3">
+          <Avatar name={t.name} photo={t.photo} />
+          <div className="min-w-0">
+            <p className="font-bold truncate">{t.name}</p>
+            <p className="text-xs text-gray-400 truncate">{t.email}</p>
+          </div>
+        </div>
+
+        <div className={`${cardCls} p-4 space-y-3 max-h-[28rem] overflow-y-auto`}>
+          {t.list.map((m) =>
+            m.from === "admin" ? (
+              <div key={m.id} className="flex justify-end">
+                <div className="max-w-[85%]">
+                  <div className="bg-red-600 rounded-2xl rounded-br-md px-4 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-red-200 mb-0.5">You (Admin)</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-1 text-right">{when(m.createdAt)}</p>
+                </div>
+              </div>
+            ) : (
+              <div key={m.id} className="max-w-[85%]">
+                <div className="bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+                  <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">{when(m.createdAt)}</p>
+              </div>
+            )
+          )}
+        </div>
+
+        {note && <p className="text-xs font-semibold text-sky-300 bg-sky-400/10 border border-sky-400/30 rounded-xl px-4 py-2.5">{note}</p>}
+        <form onSubmit={reply} className="space-y-2">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} rows={3} placeholder={`Reply to ${t.name}…`} className={`${inputCls} resize-none`} />
+          <button type="submit" disabled={sending} className={`${redBtn} w-full`}>{sending ? "Sending…" : "Send reply"}</button>
+        </form>
+      </div>
+    );
+  }
+
+  return threads.length === 0 ? (
+    <Empty>No messages yet.</Empty>
+  ) : (
+    <ul className="space-y-3">
+      {threads.map((x) => (
+        <li key={x.uid}>
+          <button onClick={() => setOpenUid(x.uid)} className={`${cardCls} w-full text-left p-4 flex items-center gap-3 hover:border-red-600/50 transition cursor-pointer`}>
+            <Avatar name={x.name} photo={x.photo} />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-sm truncate">
+                {x.name} {x.unread && <span className="ml-1 text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full align-middle">NEW</span>}
+              </p>
+              <p className="text-xs text-gray-400 truncate">{x.last.from === "admin" ? "You: " : ""}{x.last.text}</p>
+            </div>
+            <span className="text-[10px] text-gray-500 flex-shrink-0">{when(x.last.createdAt)}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ======================================================================
 // PAGE
 // ======================================================================
 export default function AdminPage() {
@@ -921,13 +1058,13 @@ export default function AdminPage() {
   const isAdmin = !!user && isAdminEmail(user.email);
 
   const [tab, setTab] = useState("dashboard");
-  const [data, setData] = useState({ requests: [], comments: [], users: [], titles: [] });
+  const [data, setData] = useState({ requests: [], comments: [], users: [], titles: [], messages: [] });
   const [dbError, setDbError] = useState("");
 
   // Live data (only after we know this is the admin)
   useEffect(() => {
     if (!isAdmin || !db) return;
-    const unsubs = ["requests", "comments", "users", "titles"].map((name) =>
+    const unsubs = ["requests", "comments", "users", "titles", "messages"].map((name) =>
       onSnapshot(
         collection(db, name),
         (snap) => setData((p) => ({ ...p, [name]: snap.docs.map((d) => ({ ...d.data(), id: d.id })) })),
@@ -949,6 +1086,14 @@ export default function AdminPage() {
   }, [data.titles]);
 
   const pending = requests.filter((r) => (r.status || "pending") === "pending").length;
+  // conversations where the user wrote last (waiting for your reply)
+  const unreadMessages = useMemo(() => {
+    const last = {};
+    data.messages.forEach((x) => {
+      if (!last[x.uid] || secs(x.createdAt) >= secs(last[x.uid].createdAt)) last[x.uid] = x;
+    });
+    return Object.values(last).filter((x) => x.from === "user").length;
+  }, [data.messages]);
 
   // ----- gates -----
   const Shell = ({ children }) => (
@@ -987,6 +1132,7 @@ export default function AdminPage() {
   const tabs = [
     ["dashboard", "Dashboard"],
     ["notify", "Notify"],
+    ["messages", `Messages${unreadMessages ? ` (${unreadMessages})` : ""}`],
     ["requests", `Requests${pending ? ` (${pending})` : ""}`],
     ["comments", "Comments"],
     ["users", "Users"],
@@ -1048,6 +1194,7 @@ export default function AdminPage() {
         {tab === "users" && <UsersPanel items={users} />}
         {tab === "titles" && <TitlesPanel items={titles} />}
         {tab === "notify" && <NotifyPanel />}
+        {tab === "messages" && <MessagesPanel items={data.messages} />}
       </main>
     </div>
   );

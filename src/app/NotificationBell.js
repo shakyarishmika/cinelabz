@@ -8,6 +8,8 @@
 //  iPhone note: web push only works after "Add to Home Screen" (iOS 16.4+). In a normal Safari tab
 //  nothing is shown, because the browser doesn't support it there.
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { createPortal } from "react-dom";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -124,31 +126,43 @@ export default function NotificationBell({ user }) {
         </button>
       )}
 
-      {/* after sign-in card: bottom sheet on phones, small card on desktop */}
-      {showCard && (
-        <div className="fixed z-[80] inset-x-3 bottom-4 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-96 rounded-2xl bg-neutral-950 border border-red-600/40 shadow-2xl shadow-black/70 p-5">
-          <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-full bg-red-600/15 border border-red-600/40 flex items-center justify-center text-xl flex-shrink-0">🔔</div>
-            <div className="min-w-0 flex-1">
-              <p className="font-black text-sm">Get notified about new movies?</p>
-              <p className="text-xs text-gray-400 mt-1 leading-relaxed">Be the first to know when new movies and series are added to CineLabz.</p>
-              {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={enable}
-                  disabled={status === "busy"}
-                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition"
-                >
-                  {status === "busy" ? "…" : "Allow"}
-                </button>
-                <button onClick={notNow} className="bg-white/10 hover:bg-white/20 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition">
-                  Not now
-                </button>
+      {/* After sign-in card. Rendered straight into <body> (portal): inside the navbar it would be
+          positioned relative to the navbar and get cut off. */}
+      {showCard &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed z-[120] inset-x-3 sm:inset-x-auto sm:right-6 sm:w-[26rem] rounded-2xl bg-neutral-950 border border-red-600/50 shadow-2xl shadow-black/80 p-5"
+            style={{ bottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+            role="dialog"
+            aria-label="Turn on notifications"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-full bg-red-600/15 border border-red-600/40 flex items-center justify-center text-xl flex-shrink-0">🔔</div>
+              <div className="min-w-0 flex-1">
+                <p className="font-black text-base">Turn on notifications?</p>
+                <p className="text-sm text-gray-300 mt-1 leading-relaxed">
+                  Get an alert when new movies &amp; series are added, and when the admin replies to your message.
+                </p>
+                <p className="text-xs text-gray-500 mt-1.5">Your browser will ask you to confirm. You can change this any time in its settings.</p>
+                {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={enable}
+                    disabled={status === "busy"}
+                    className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition"
+                  >
+                    {status === "busy" ? "…" : "Yes, allow"}
+                  </button>
+                  <button onClick={notNow} className="bg-white/10 hover:bg-white/20 px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer transition">
+                    Not now
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }

@@ -12,6 +12,7 @@ import Comments from "./Comments";
 import SeasonEpisodes from "./SeasonEpisodes";
 import TelegramLogo from "./TelegramLogo";
 import NotificationBell from "./NotificationBell";
+import ContactPage from "./ContactPage";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -164,6 +165,7 @@ export default function Home() {
   const { user, loading: authLoading, error: authError, setError: setAuthError, signIn, signOutUser } = useAuth();
   const [showSignIn, setShowSignIn] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
+  const [showContact, setShowContact] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   // Close the sign-in popup as soon as the user is signed in
@@ -363,13 +365,22 @@ export default function Home() {
       const movieId = params.get("movie");
       const actorParam = params.get("actor");
 
+      if (params.get("page") === "contact") {
+        setShowContact(true);
+        setShowRequest(false);
+        setSelectedId(null);
+        setSelectedActor(null);
+        return;
+      }
       if (params.get("page") === "request") {
         setShowRequest(true);
+        setShowContact(false);
         setSelectedId(null);
         setSelectedActor(null);
         return;
       }
       setShowRequest(false);
+      setShowContact(false);
 
       if (movieId) {
         const found = baseRef.current.find((m) => String(m.id) === String(movieId));
@@ -509,11 +520,23 @@ export default function Home() {
   // ---------- Handlers ----------
   const openRequest = () => {
     setShowRequest(true);
+    setShowContact(false);
     setSelectedId(null);
     setSelectedActor(null);
     setDrawerOpen(false);
     setOpenMenu(null);
     window.history.pushState({}, "", "/?page=request");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const openContact = () => {
+    setShowContact(true);
+    setShowRequest(false);
+    setSelectedId(null);
+    setSelectedActor(null);
+    setDrawerOpen(false);
+    setOpenMenu(null);
+    window.history.pushState({}, "", "/?page=contact");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -542,6 +565,7 @@ export default function Home() {
 
   const handleSelectMovie = (item) => {
     setShowRequest(false);
+    setShowContact(false);
     setSelectedId(item.id);
     setSelectedActor(null);
     setSelectedSeason(firstSeasonNo(item));
@@ -553,6 +577,7 @@ export default function Home() {
 
   const handleSelectActor = (actorName) => {
     setShowRequest(false);
+    setShowContact(false);
     setSelectedActor(actorName);
     setSelectedId(null);
     window.history.pushState({}, "", `/?actor=${encodeURIComponent(actorName)}`);
@@ -561,6 +586,7 @@ export default function Home() {
 
   const goType = (type) => {
     setShowRequest(false);
+    setShowContact(false);
     setSelectedId(null);
     setSelectedActor(null);
     setSelectedType(type);
@@ -569,6 +595,7 @@ export default function Home() {
 
   const handleBackToHome = () => {
     setShowRequest(false);
+    setShowContact(false);
     setSelectedId(null);
     setSelectedActor(null);
     setSelectedType("all");
@@ -770,6 +797,7 @@ export default function Home() {
                 setSearchQuery(e.target.value);
                 if (selectedId || selectedActor || showRequest) {
                   setShowRequest(false);
+                  setShowContact(false);
                   setSelectedId(null);
                   setSelectedActor(null);
                   window.history.pushState({}, "", "/");
@@ -1021,6 +1049,12 @@ export default function Home() {
                       >
                         🎯 My requests
                       </button>
+                      <button
+                        onClick={openContact}
+                        className="w-full text-left mt-1 px-3 py-2.5 rounded-xl text-sm text-gray-300 hover:bg-white/10 transition cursor-pointer"
+                      >
+                        💬 Contact us
+                      </button>
                       {isAdminEmail(user.email) && (
                         <a
                           href="/admin"
@@ -1109,6 +1143,12 @@ export default function Home() {
             >
               🎯 Request
             </button>
+            <button
+              onClick={openContact}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-semibold transition cursor-pointer ${showContact ? "bg-white/10 text-white" : "text-gray-300 hover:bg-white/10"}`}
+            >
+              💬 Contact us
+            </button>
 
             <p className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-widest text-gray-500 font-bold">TV Series</p>
             {[
@@ -1196,7 +1236,10 @@ export default function Home() {
       </aside>
 
       {/* --- 1. ACTOR PAGE --- */}
-      {showRequest ? (
+      {showContact ? (
+        /* --- CONTACT US PAGE --- */
+        <ContactPage user={user} authLoading={authLoading} onSignIn={openSignIn} onBack={handleBackToHome} />
+      ) : showRequest ? (
         /* --- 0. REQUEST PAGE (sign-in required) --- */
         <RequestPage
           user={user}
@@ -1612,7 +1655,9 @@ export default function Home() {
         onGoogle={signIn}
         error={authError}
         reason={
-          showRequest
+          showContact
+            ? "Sign in with your Google account to send a message to the admin."
+            : showRequest
             ? "Sign in with your Google account to request movies & TV series."
             : selectedMovie
             ? "Sign in with your Google account to join the comments."
@@ -1652,6 +1697,7 @@ export default function Home() {
   // Close detail/actor pages but keep the language/genre filter the user just picked
   function handleBackToHomeKeepFilters() {
     setShowRequest(false);
+    setShowContact(false);
     setSelectedId(null);
     setSelectedActor(null);
     window.history.pushState({}, "", "/");
