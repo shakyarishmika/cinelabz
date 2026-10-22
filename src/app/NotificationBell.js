@@ -9,7 +9,6 @@
 //  nothing is shown, because the browser doesn't support it there.
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { createPortal } from "react-dom";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
