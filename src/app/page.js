@@ -13,6 +13,7 @@ import SeasonEpisodes from "./SeasonEpisodes";
 import TelegramLogo from "./TelegramLogo";
 import NotificationBell from "./NotificationBell";
 import ContactPage from "./ContactPage";
+import DmcaPage from "./DmcaPage";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -166,6 +167,7 @@ export default function Home() {
   const [showSignIn, setShowSignIn] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
   const [showContact, setShowContact] = useState(false);
+  const [showDmca, setShowDmca] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   // Close the sign-in popup as soon as the user is signed in
@@ -365,8 +367,17 @@ export default function Home() {
       const movieId = params.get("movie");
       const actorParam = params.get("actor");
 
+      if (params.get("page") === "dmca") {
+        setShowDmca(true);
+        setShowContact(false);
+        setShowRequest(false);
+        setSelectedId(null);
+        setSelectedActor(null);
+        return;
+      }
       if (params.get("page") === "contact") {
         setShowContact(true);
+        setShowDmca(false);
         setShowRequest(false);
         setSelectedId(null);
         setSelectedActor(null);
@@ -375,12 +386,14 @@ export default function Home() {
       if (params.get("page") === "request") {
         setShowRequest(true);
         setShowContact(false);
+        setShowDmca(false);
         setSelectedId(null);
         setSelectedActor(null);
         return;
       }
       setShowRequest(false);
       setShowContact(false);
+      setShowDmca(false);
 
       if (movieId) {
         const found = baseRef.current.find((m) => String(m.id) === String(movieId));
@@ -521,6 +534,7 @@ export default function Home() {
   const openRequest = () => {
     setShowRequest(true);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedId(null);
     setSelectedActor(null);
     setDrawerOpen(false);
@@ -529,8 +543,21 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const openDmca = () => {
+    setShowDmca(true);
+    setShowContact(false);
+    setShowRequest(false);
+    setSelectedId(null);
+    setSelectedActor(null);
+    setDrawerOpen(false);
+    setOpenMenu(null);
+    window.history.pushState({}, "", "/?page=dmca");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const openContact = () => {
     setShowContact(true);
+    setShowDmca(false);
     setShowRequest(false);
     setSelectedId(null);
     setSelectedActor(null);
@@ -566,6 +593,7 @@ export default function Home() {
   const handleSelectMovie = (item) => {
     setShowRequest(false);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedId(item.id);
     setSelectedActor(null);
     setSelectedSeason(firstSeasonNo(item));
@@ -578,6 +606,7 @@ export default function Home() {
   const handleSelectActor = (actorName) => {
     setShowRequest(false);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedActor(actorName);
     setSelectedId(null);
     window.history.pushState({}, "", `/?actor=${encodeURIComponent(actorName)}`);
@@ -587,6 +616,7 @@ export default function Home() {
   const goType = (type) => {
     setShowRequest(false);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedId(null);
     setSelectedActor(null);
     setSelectedType(type);
@@ -596,6 +626,7 @@ export default function Home() {
   const handleBackToHome = () => {
     setShowRequest(false);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedId(null);
     setSelectedActor(null);
     setSelectedType("all");
@@ -798,6 +829,7 @@ export default function Home() {
                 if (selectedId || selectedActor || showRequest) {
                   setShowRequest(false);
                   setShowContact(false);
+                  setShowDmca(false);
                   setSelectedId(null);
                   setSelectedActor(null);
                   window.history.pushState({}, "", "/");
@@ -1236,7 +1268,10 @@ export default function Home() {
       </aside>
 
       {/* --- 1. ACTOR PAGE --- */}
-      {showContact ? (
+      {showDmca ? (
+        /* --- DMCA POLICY PAGE --- */
+        <DmcaPage onBack={handleBackToHome} />
+      ) : showContact ? (
         /* --- CONTACT US PAGE --- */
         <ContactPage user={user} authLoading={authLoading} onSignIn={openSignIn} onBack={handleBackToHome} />
       ) : showRequest ? (
@@ -1672,6 +1707,10 @@ export default function Home() {
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
             <span className="mx-2 text-gray-600">|</span>
             Developed by <span className="text-white font-semibold">Cloud + Shakya</span>
+            <span className="mx-2 text-gray-600">|</span>
+            <button onClick={openDmca} className="text-gray-300 hover:text-red-500 underline-offset-4 hover:underline cursor-pointer transition">
+              DMCA Policy
+            </button>
           </p>
 
           <div className="flex items-center gap-3">
@@ -1698,6 +1737,7 @@ export default function Home() {
   function handleBackToHomeKeepFilters() {
     setShowRequest(false);
     setShowContact(false);
+    setShowDmca(false);
     setSelectedId(null);
     setSelectedActor(null);
     window.history.pushState({}, "", "/");
