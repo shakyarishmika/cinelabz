@@ -192,7 +192,7 @@ const getFsEl = () => document.fullscreenElement || document.webkitFullscreenEle
 
 // ================================================================= PLAYER
 // subtitles = [{ label, url }]   (url = direct link to .srt / .vtt)
-export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title, isEmbed = false, tmdbId }) {
+export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title }) {
   const boxRef = useRef(null);
   const videoRef = useRef(null);
   const barRef = useRef(null);
@@ -564,7 +564,6 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
 
   // ---------- tapping the picture
   const onSurfaceUp = (e) => {
-    if (isEmbed) return; // If embed iframe, let iframe handle clicks
     boxRef.current?.focus({ preventScroll: true });
     if (panel) return setPanel(false);
     const rect = e.currentTarget.getBoundingClientRect();
@@ -585,7 +584,6 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   };
 
   const onKey = (e) => {
-    if (isEmbed) return;
     const tag = e.target.tagName;
     if (tag === "INPUT" || tag === "SELECT") return;
     const k = e.key;
@@ -634,53 +632,42 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         .cl-range::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:9999px;background:#ef4444;cursor:pointer}
       `}</style>
 
-      {/* ---------- video (or vidsrc iframe) ---------- */}
-      {isEmbed ? (
-        <iframe
-          src={`https://vidsrc.to/embed/movie/${tmdbId}`}
-          className="absolute inset-0 w-full h-full border-0 bg-black"
-          allowFullScreen
-          scrolling="no"
-          allow="autoplay; encrypted-media; picture-in-picture"
-          title={title}
-        />
-      ) : (
-        <video
-          ref={videoRef}
-          src={playSrc}
-          poster={poster}
-          playsInline
-          preload="metadata"
-          controlsList="nodownload noremoteplayback"
-          disableRemotePlayback
-          className="absolute inset-0 w-full h-full object-contain bg-black"
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-          onWaiting={() => setWaiting(true)}
-          onPlaying={() => setWaiting(false)}
-          onCanPlay={() => setWaiting(false)}
-          onSeeked={() => {
-            setWaiting(false);
-            armWatchdog();
-          }}
-          onTimeUpdate={onTimeUpdate}
-          onProgress={onTimeUpdate}
-          onLoadedMetadata={onLoadedMetadata}
-          onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
-          onVolumeChange={(e) => {
-            setVolume(e.currentTarget.volume);
-            setMuted(e.currentTarget.muted);
-          }}
-          onError={(e) => {
-            setErrCode(e.currentTarget.error?.code || 0);
-            setFailed(true);
-          }}
-        />
-      )}
+      {/* ---------- video (no native controls => no native download menu) ---------- */}
+      <video
+        ref={videoRef}
+        src={playSrc}
+        poster={poster}
+        playsInline
+        preload="metadata"
+        controlsList="nodownload noremoteplayback"
+        disableRemotePlayback
+        className="absolute inset-0 w-full h-full object-contain bg-black"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        onWaiting={() => setWaiting(true)}
+        onPlaying={() => setWaiting(false)}
+        onCanPlay={() => setWaiting(false)}
+        onSeeked={() => {
+          setWaiting(false);
+          armWatchdog();
+        }}
+        onTimeUpdate={onTimeUpdate}
+        onProgress={onTimeUpdate}
+        onLoadedMetadata={onLoadedMetadata}
+        onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
+        onVolumeChange={(e) => {
+          setVolume(e.currentTarget.volume);
+          setMuted(e.currentTarget.muted);
+        }}
+        onError={(e) => {
+          setErrCode(e.currentTarget.error?.code || 0);
+          setFailed(true);
+        }}
+      />
 
-      {/* ---------- tap / click surface (Disabled if embed) ---------- */}
-      {!isEmbed && <div className="absolute inset-0 z-10" onPointerUp={onSurfaceUp} />}
+      {/* ---------- tap / click surface ---------- */}
+      <div className="absolute inset-0 z-10" onPointerUp={onSurfaceUp} />
 
       {/* ---------- double-tap feedback ---------- */}
       {flash && (
@@ -696,7 +683,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       )}
 
       {/* ---------- subtitles (drawn by the player) ---------- */}
-      {!isEmbed && current && cueIdx.length > 0 && (
+      {current && cueIdx.length > 0 && (
         <div
           className="absolute inset-x-0 z-[15] flex justify-center px-[5%] pointer-events-none transition-[bottom] duration-200"
           style={{ bottom: subBottom }}
@@ -720,7 +707,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
 
       {/* ---------- top bar ---------- */}
       <div
-        className={`absolute top-0 inset-x-0 z-20 px-3 sm:px-5 pt-3 pb-8 bg-gradient-to-b from-black/80 to-transparent flex items-center gap-3 transition-opacity duration-300 ${uiVisible || isEmbed ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        className={`absolute top-0 inset-x-0 z-20 px-3 sm:px-5 pt-3 pb-8 bg-gradient-to-b from-black/80 to-transparent flex items-center gap-3 transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
       >
         {isFs && (
           <button onClick={toggleFs} aria-label="Exit fullscreen" className="w-9 h-9 rounded-full bg-white/10 hover:bg-red-600 flex items-center justify-center transition cursor-pointer">
@@ -737,119 +724,115 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         )}
       </div>
 
-      {/* ---------- centre buttons (Hidden if embed) ---------- */}
-      {!isEmbed && (
-        <div className={`absolute inset-0 z-20 flex items-center justify-center gap-7 sm:gap-14 pointer-events-none transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0"}`}>
-          <button
-            onClick={() => skip(-10)}
-            aria-label="Back 10 seconds"
-            className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
-          >
-            <ISkip dir="back" className="w-6 h-6 sm:w-8 sm:h-8" />
-          </button>
-          <button
-            onClick={togglePlay}
-            aria-label={playing ? "Pause" : "Play"}
-            className={`${hit} w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600 hover:bg-red-500 active:scale-95 shadow-xl shadow-red-600/50 ring-4 ring-red-600/25 flex items-center justify-center transition cursor-pointer`}
-          >
-            {waiting ? <Spinner /> : playing ? <IPause className="w-8 h-8 sm:w-10 sm:h-10" /> : <IPlay className="w-8 h-8 sm:w-10 sm:h-10 ml-0.5" />}
-          </button>
-          <button
-            onClick={() => skip(10)}
-            aria-label="Forward 10 seconds"
-            className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
-          >
-            <ISkip dir="fwd" className="w-6 h-6 sm:w-8 sm:h-8" />
-          </button>
-        </div>
-      )}
-
-      {/* ---------- bottom bar (Hidden if embed) ---------- */}
-      {!isEmbed && (
-        <div
-          className={`absolute bottom-0 inset-x-0 z-20 px-3 sm:px-5 pb-2 sm:pb-3 pt-12 bg-gradient-to-t from-black/90 via-black/55 to-transparent transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      {/* ---------- centre buttons ---------- */}
+      <div className={`absolute inset-0 z-20 flex items-center justify-center gap-7 sm:gap-14 pointer-events-none transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0"}`}>
+        <button
+          onClick={() => skip(-10)}
+          aria-label="Back 10 seconds"
+          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
         >
-          {/* seek bar */}
+          <ISkip dir="back" className="w-6 h-6 sm:w-8 sm:h-8" />
+        </button>
+        <button
+          onClick={togglePlay}
+          aria-label={playing ? "Pause" : "Play"}
+          className={`${hit} w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600 hover:bg-red-500 active:scale-95 shadow-xl shadow-red-600/50 ring-4 ring-red-600/25 flex items-center justify-center transition cursor-pointer`}
+        >
+          {waiting ? <Spinner /> : playing ? <IPause className="w-8 h-8 sm:w-10 sm:h-10" /> : <IPlay className="w-8 h-8 sm:w-10 sm:h-10 ml-0.5" />}
+        </button>
+        <button
+          onClick={() => skip(10)}
+          aria-label="Forward 10 seconds"
+          className={`${hit} w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 border border-white/15 hover:bg-white/20 active:scale-90 flex items-center justify-center transition cursor-pointer`}
+        >
+          <ISkip dir="fwd" className="w-6 h-6 sm:w-8 sm:h-8" />
+        </button>
+      </div>
+
+      {/* ---------- bottom bar ---------- */}
+      <div
+        className={`absolute bottom-0 inset-x-0 z-20 px-3 sm:px-5 pb-2 sm:pb-3 pt-12 bg-gradient-to-t from-black/90 via-black/55 to-transparent transition-opacity duration-300 ${uiVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      >
+        {/* seek bar */}
+        <div
+          ref={barRef}
+          role="slider"
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(shownTime)}
+          onPointerDown={onBarDown}
+          onPointerMove={onBarMove}
+          onPointerUp={onBarUp}
+          onPointerCancel={() => setDrag(null)}
+          className="group relative h-6 flex items-center cursor-pointer touch-none"
+        >
+          <div className="relative w-full h-1.5 group-hover:h-2 rounded-full bg-white/20 overflow-hidden transition-all">
+            <div className="absolute inset-y-0 left-0 bg-white/30" style={{ width: `${bufferedPct}%` }} />
+            <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-700 to-red-500" style={{ width: `${playedPct}%` }} />
+          </div>
           <div
-            ref={barRef}
-            role="slider"
-            aria-label="Seek"
-            aria-valuemin={0}
-            aria-valuemax={Math.round(duration)}
-            aria-valuenow={Math.round(shownTime)}
-            onPointerDown={onBarDown}
-            onPointerMove={onBarMove}
-            onPointerUp={onBarUp}
-            onPointerCancel={() => setDrag(null)}
-            className="group relative h-6 flex items-center cursor-pointer touch-none"
-          >
-            <div className="relative w-full h-1.5 group-hover:h-2 rounded-full bg-white/20 overflow-hidden transition-all">
-              <div className="absolute inset-y-0 left-0 bg-white/30" style={{ width: `${bufferedPct}%` }} />
-              <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-700 to-red-500" style={{ width: `${playedPct}%` }} />
-            </div>
-            <div
-              className="absolute top-1/2 w-3.5 h-3.5 -ml-[7px] -translate-y-1/2 rounded-full bg-red-500 shadow-lg shadow-red-600/60 ring-2 ring-white/80 pointer-events-none"
-              style={{ left: `${playedPct}%` }}
-            />
-          </div>
-
-          {/* buttons */}
-          <div className="flex items-center gap-1 sm:gap-2 mt-0.5">
-            <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
-              {playing ? <IPause className="w-6 h-6" /> : <IPlay className="w-6 h-6" />}
-            </button>
-
-            <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"} className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
-              {muted || volume === 0 ? <IMute className="w-5 h-5" /> : <IVol className="w-5 h-5" />}
-            </button>
-            {!touch && (
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={muted ? 0 : volume}
-                onChange={(e) => changeVolume(Number(e.target.value))}
-                aria-label="Volume"
-                className="cl-range w-16 sm:w-20 hidden sm:block"
-              />
-            )}
-
-            <span className="text-[11px] sm:text-xs font-semibold tabular-nums text-gray-200 ml-1 whitespace-nowrap">
-              {fmt(shownTime)} <span className="text-gray-500">/</span> {fmt(duration)}
-            </span>
-
-            <span className="flex-1" />
-
-            <button
-              onClick={toggleSubs}
-              aria-label="Subtitles on/off"
-              aria-pressed={active !== "off"}
-              className={`relative w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer ${active !== "off" ? "bg-red-600 hover:bg-red-500" : "hover:bg-white/15"}`}
-            >
-              <ICC className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setPanel((p) => !p)}
-              aria-label="Settings"
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer ${panel ? "bg-white/20" : "hover:bg-white/15"}`}
-            >
-              <IGear className={`w-5 h-5 transition-transform ${panel ? "rotate-45" : ""}`} />
-            </button>
-            {pipOK && (
-              <button onClick={togglePip} aria-label="Picture in picture" className="w-9 h-9 rounded-full hover:bg-white/15 hidden sm:flex items-center justify-center transition cursor-pointer">
-                <IPip className="w-5 h-5" />
-              </button>
-            )}
-            <button onClick={toggleFs} aria-label="Fullscreen" className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
-              {isFs ? <IFsExit className="w-5 h-5" /> : <IFs className="w-5 h-5" />}
-            </button>
-          </div>
+            className="absolute top-1/2 w-3.5 h-3.5 -ml-[7px] -translate-y-1/2 rounded-full bg-red-500 shadow-lg shadow-red-600/60 ring-2 ring-white/80 pointer-events-none"
+            style={{ left: `${playedPct}%` }}
+          />
         </div>
-      )}
+
+        {/* buttons */}
+        <div className="flex items-center gap-1 sm:gap-2 mt-0.5">
+          <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
+            {playing ? <IPause className="w-6 h-6" /> : <IPlay className="w-6 h-6" />}
+          </button>
+
+          <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"} className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
+            {muted || volume === 0 ? <IMute className="w-5 h-5" /> : <IVol className="w-5 h-5" />}
+          </button>
+          {!touch && (
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={muted ? 0 : volume}
+              onChange={(e) => changeVolume(Number(e.target.value))}
+              aria-label="Volume"
+              className="cl-range w-16 sm:w-20 hidden sm:block"
+            />
+          )}
+
+          <span className="text-[11px] sm:text-xs font-semibold tabular-nums text-gray-200 ml-1 whitespace-nowrap">
+            {fmt(shownTime)} <span className="text-gray-500">/</span> {fmt(duration)}
+          </span>
+
+          <span className="flex-1" />
+
+          <button
+            onClick={toggleSubs}
+            aria-label="Subtitles on/off"
+            aria-pressed={active !== "off"}
+            className={`relative w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer ${active !== "off" ? "bg-red-600 hover:bg-red-500" : "hover:bg-white/15"}`}
+          >
+            <ICC className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setPanel((p) => !p)}
+            aria-label="Settings"
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer ${panel ? "bg-white/20" : "hover:bg-white/15"}`}
+          >
+            <IGear className={`w-5 h-5 transition-transform ${panel ? "rotate-45" : ""}`} />
+          </button>
+          {pipOK && (
+            <button onClick={togglePip} aria-label="Picture in picture" className="w-9 h-9 rounded-full hover:bg-white/15 hidden sm:flex items-center justify-center transition cursor-pointer">
+              <IPip className="w-5 h-5" />
+            </button>
+          )}
+          <button onClick={toggleFs} aria-label="Fullscreen" className="w-9 h-9 rounded-full hover:bg-white/15 flex items-center justify-center transition cursor-pointer">
+            {isFs ? <IFsExit className="w-5 h-5" /> : <IFs className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
 
       {/* ---------- settings panel ---------- */}
-      {!isEmbed && panel && (
+      {panel && (
         <div
           className="absolute z-30 right-2 sm:right-4 bottom-[4.25rem] sm:bottom-20 w-[min(21rem,calc(100%-1rem))] max-h-[78%] overflow-y-auto rounded-2xl bg-neutral-950/97 border border-white/10 shadow-2xl shadow-black/70 p-4"
           onPointerUp={(e) => e.stopPropagation()}
@@ -965,7 +948,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       )}
 
       {/* ---------- can't play ---------- */}
-      {!isEmbed && failed && (
+      {failed && (
         <div className="absolute inset-0 z-40 bg-black/90 flex flex-col items-center justify-center text-center gap-2 p-6">
           <p className="font-black text-lg">This browser can't play this video</p>
           <p className="text-xs text-gray-400 max-w-md">
