@@ -7,6 +7,7 @@ import { auth, db } from "../firebase";
 import { useAuth } from "../useAuth";
 import { isAdminEmail } from "../adminConfig";
 import TelegramLogo from "../TelegramLogo";
+import NoticeBar from "../NoticeBar";
 import { movies as staticMovies } from "../moviesData";
 
 // ---------- small helpers ----------
@@ -367,6 +368,8 @@ function TitleForm({ initial, onDone }) {
     videoUrl: initial?.videoUrl || "",
     qualityLinks: qualityLinksToText(initial?.videoLinks),
     trending: !!initial?.trending,
+    noticeText: initial?.notice?.text || "",
+    noticeType: initial?.notice?.type || "player",
     trendingRank: initial?.trendingRank ?? "",
     subtitleUrl: initial?.subtitleUrl || "",
     subtitleDownloadUrl: initial?.subtitleDownloadUrl || "",
@@ -405,6 +408,7 @@ function TitleForm({ initial, onDone }) {
       subtitleUrl: f.subtitleUrl.trim(),
       subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       trending: !!f.trending,
+      notice: f.noticeText.trim() ? { text: f.noticeText.trim().slice(0, 200), type: f.noticeType } : null,
       trendingRank: f.trendingRank ? Number(f.trendingRank) : null,
       ...(isSeries
         ? { status: f.status }
@@ -503,6 +507,45 @@ function TitleForm({ initial, onDone }) {
             <input value={f.rating} onChange={set("rating")} placeholder="8.5/10" className={inputCls} />
           </div>
         )}
+      </div>
+
+      {/* message bar above the player */}
+      <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
+        <label className={labelCls}>Message above the player (optional)</label>
+        <textarea
+          value={f.noticeText}
+          onChange={set("noticeText")}
+          rows={2}
+          maxLength={200}
+          placeholder="Telegram bot is not working today."
+          className={`${inputCls} resize-none`}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ["player", "About Player / Server"],
+            ["telegram", "About Telegram Bot"],
+          ].map(([val, label]) => {
+            const on = f.noticeType === val;
+            const cls = on
+              ? val === "player"
+                ? "bg-red-600/15 border-red-600/50 text-red-300"
+                : "bg-sky-400/15 border-sky-400/50 text-sky-300"
+              : "bg-black/30 border-white/10 text-gray-400 hover:text-white";
+            return (
+              <label key={val} className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-xs sm:text-sm font-semibold cursor-pointer transition ${cls}`}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => setF((p) => ({ ...p, noticeType: val }))}
+                  className={`w-4 h-4 flex-shrink-0 ${val === "player" ? "accent-red-600" : "accent-sky-400"}`}
+                />
+                {label}
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-gray-500">Pick one. Player / Server = red bar. Telegram Bot = light-blue bar. Leave the message empty to hide the bar.</p>
+        {f.noticeText.trim() && <NoticeBar notice={{ text: f.noticeText.trim(), type: f.noticeType }} />}
       </div>
 
       <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
@@ -819,6 +862,11 @@ function TitlesPanel({ items }) {
                 <button onClick={() => setView({ mode: "form", id: t.id })} className={ghostBtn}>
                   Edit
                 </button>
+                {t.notice?.text && (
+                  <button onClick={() => updateDoc(doc(db, "titles", t.id), { notice: null }).catch(fail)} className={ghostBtn}>
+                    Clear message
+                  </button>
+                )}
                 <button onClick={() => updateDoc(doc(db, "titles", t.id), { trending: !t.trending }).catch(fail)} className={ghostBtn}>
                   {t.trending ? "★ Trending" : "☆ Trending"}
                 </button>
@@ -961,8 +1009,7 @@ function MessagesPanel({ items }) {
         if (j.ok) {
           const parts = [];
           if (j.push) parts.push(`${j.push} device${j.push === 1 ? "" : "s"} (notification)`);
-          if (j.telegram) parts.push("Telegram");
-          msg = parts.length ? `✓ Reply sent. Notified: ${parts.join(" + ")}.` : "✓ Reply sent. (The user has no notifications / Telegram turned on.)";
+          msg = parts.length ? `✓ Reply sent. Notification pushed to ${parts.join(" + ")}.` : "✓ Reply sent. (This user hasn't turned on notifications, so no push was sent.)";
         }
       } catch {
         /* the reply itself is saved */

@@ -4,11 +4,11 @@
 //   event "status"       : ADMIN panel -> the status of a request changed (Telegram)
 //   event "received"     : the user, right after sending a request (Telegram)
 //   event "contactReply" : ADMIN panel -> the admin answered a Contact-us message
-//                          (browser push to that user's devices + Telegram if connected)
+//                          (browser push to that user's devices ONLY, nothing goes to Telegram)
 import { ADMIN_EMAILS } from "../../adminConfig";
 import { getAdmin, verifyIdToken } from "../../firebaseAdmin";
 import { sendPush } from "../../push";
-import { escHtml, requestMessage, tgSend } from "../../telegram";
+import { requestMessage, tgSend } from "../../telegram";
 
 const json = (body, status = 200) => Response.json(body, { status });
 
@@ -41,7 +41,7 @@ export async function POST(req) {
     const text = String(body.text || "").trim();
     if (!uid || !text) return json({ ok: false, reason: "bad-request" }, 400);
 
-    const result = { ok: true, push: 0, telegram: false };
+    const result = { ok: true, push: 0 };
     try {
       const subs = (await db.collection("pushSubs").where("uid", "==", uid).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
       if (subs.length) {
@@ -51,15 +51,6 @@ export async function POST(req) {
       }
     } catch (e) {
       console.error("push failed:", e);
-    }
-    try {
-      const tgId = (await db.collection("users").doc(uid).get()).data()?.tgId;
-      if (tgId) {
-        const link = process.env.NEXT_PUBLIC_SITE_URL ? `\n\n${process.env.NEXT_PUBLIC_SITE_URL}/?page=contact` : "";
-        result.telegram = await tgSend(tgId, `💬 <b>Reply from CineLabz Admin</b>\n${escHtml(text)}${link}`).catch(() => false);
-      }
-    } catch (e) {
-      console.error("telegram failed:", e);
     }
     return json(result);
   }

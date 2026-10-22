@@ -14,6 +14,7 @@ import TelegramLogo from "./TelegramLogo";
 import NotificationBell from "./NotificationBell";
 import ContactPage from "./ContactPage";
 import DmcaPage from "./DmcaPage";
+import NoticeBar from "./NoticeBar";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -1391,6 +1392,8 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            <NoticeBar notice={selectedMovie.notice} />
 
             {isMegaEmbed ? (
               <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl border-y sm:border border-white/10">
