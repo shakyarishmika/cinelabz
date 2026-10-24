@@ -16,6 +16,16 @@ const nextConfig = {
       },
     },
   },
+
+  // 🔹 CORS Block වෙන එක නවත්වන්න Rewrites එකතු කර ඇත
+  async rewrites() {
+    return [
+      {
+        source: '/api/proxy/baiscope/:path*',
+        destination: 'https://media.baiscopewatch.com/file/Movies01-Baiscopelk/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;
