@@ -21,7 +21,7 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/proxy/baiscope/:path*',
+        source: '/api/proxy/cinelabz/:path*',
         destination: 'https://media.baiscopewatch.com/file/Movies01-Baiscopelk/:path*',
       },
     ];
