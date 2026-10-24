@@ -2,19 +2,20 @@
 
 // src/app/admin/page.js  →  opens at  /admin
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useAuth } from "../useAuth";
 import { isAdminEmail } from "../adminConfig";
 import TelegramLogo from "../TelegramLogo";
 import NoticeBar from "../NoticeBar";
+import { PopupCard } from "../StartupPopup";
 import { movies as staticMovies } from "../moviesData";
 
 // ---------- small helpers ----------
 const inputCls =
   "w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-600/70 focus:ring-1 focus:ring-red-600/40 transition";
 const labelCls = "block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5";
-const cardCls = "bg-neutral-900/70 border border-white/10 rounded-2xl";
+const cardCls = "bg-gradient-to-b from-white/[0.05] to-white/[0.015] border border-white/10 rounded-2xl shadow-lg shadow-black/30";
 const redBtn = "bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl px-4 py-2.5 text-sm transition cursor-pointer disabled:opacity-60";
 const ghostBtn = "bg-white/10 hover:bg-white/20 border border-white/10 text-gray-200 font-semibold rounded-xl px-4 py-2.5 text-sm transition cursor-pointer";
 
@@ -57,7 +58,7 @@ function parseQualityLinks(text) {
   return out;
 }
 const qualityLinksToText = (obj) => Object.entries(obj || {}).map(([k, v]) => `${k} | ${v}`).join("\n");
-const QUALITY_HINT = "One per line, e.g.  1080p | https://…   (shows a quality picker in the player; used instead of the single link)";
+const QUALITY_HINT = "One per line, e.g.  1080p | https://…   (adds a Quality menu in the player). A single .m3u8 HLS link already lists its own qualities, so you only need it in the Video link box.";
 const validTelegram = (u) => !u || /^https?:\/\/(t|telegram)\.me\//i.test(u);
 const TG_ERR = "Telegram link must look like https://t.me/YourBot?start=abc";
 const serversToText = (list) =>
@@ -149,7 +150,7 @@ function RequestsPanel({ items, users }) {
       {list.length === 0 ? (
         <Empty>No requests here.</Empty>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3 items-start">
           {list.map((r) => (
             <li key={r.id} className={`${cardCls} p-4 space-y-3`}>
               <div className="flex items-start justify-between gap-3">
@@ -284,7 +285,7 @@ function CommentsPanel({ items, titleName, adminUser }) {
       {shown.length === 0 ? (
         <Empty>No comments.</Empty>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-4 xl:grid-cols-2 items-start">
           {shown.map((c) => (
             <li key={c.id} className={`${cardCls} p-4 space-y-3`}>
               {one(c, c.id, false)}
@@ -319,7 +320,7 @@ function UsersPanel({ items }) {
       {list.length === 0 ? (
         <Empty>No users yet.</Empty>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
           {list.map((u) => (
             <li key={u.id} className={`${cardCls} p-4 flex items-center gap-3`}>
               <Avatar name={u.name || u.email} photo={u.photoURL} />
@@ -433,7 +434,7 @@ function TitleForm({ initial, onDone }) {
   };
 
   return (
-    <form onSubmit={save} className={`${cardCls} p-5 space-y-4`}>
+    <form onSubmit={save} className={`${cardCls} p-5 sm:p-7 space-y-4 xl:space-y-0 xl:columns-2 xl:gap-10 [&>*]:break-inside-avoid xl:[&>*]:mb-5`}>
       <h3 className="font-black text-lg">{edit ? "Edit title" : "Add a new title"}</h3>
 
       <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-xl border border-white/10">
@@ -588,7 +589,7 @@ function TitleForm({ initial, onDone }) {
       ) : (
         <>
           <div>
-            <label className={labelCls}>Video link (mp4 or mega.nz/embed)</label>
+            <label className={labelCls}>Video link (mp4, .m3u8 HLS or mega.nz/embed)</label>
             <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
           </div>
           <div>
@@ -765,7 +766,7 @@ function EpisodesManager({ title, onBack }) {
           </div>
         </div>
         <div>
-          <label className={labelCls}>Video link (mp4 or mega.nz/embed)</label>
+          <label className={labelCls}>Video link (mp4, .m3u8 HLS or mega.nz/embed)</label>
           <input value={f.videoUrl} onChange={set("videoUrl")} placeholder="https://…" className={inputCls} />
         </div>
         <div>
@@ -841,7 +842,7 @@ function TitlesPanel({ items }) {
       {items.length === 0 ? (
         <Empty>No titles yet. Tap “+ Add movie / TV series” to add your first one.</Empty>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3 items-start">
           {items.map((t) => (
             <li key={t.id} className={`${cardCls} p-4 space-y-3`}>
               <div className="flex items-start justify-between gap-3">
@@ -1028,11 +1029,10 @@ function MessagesPanel({ items }) {
       .then(() => setOpenUid(null))
       .catch(fail);
 
-  if (t) {
-    return (
+  const pane = t ? (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => { setOpenUid(null); setNote(""); }} className={ghostBtn}>← All messages</button>
+          <button onClick={() => { setOpenUid(null); setNote(""); }} className={`${ghostBtn} xl:hidden`}>← All messages</button>
           <button onClick={() => removeThread(t)} className="ml-auto bg-red-600/15 text-red-400 hover:bg-red-600 hover:text-white rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer">Delete</button>
         </div>
         <div className="flex items-center gap-3">
@@ -1043,7 +1043,7 @@ function MessagesPanel({ items }) {
           </div>
         </div>
 
-        <div className={`${cardCls} p-4 space-y-3 max-h-[28rem] overflow-y-auto`}>
+        <div className={`${cardCls} p-4 space-y-3 max-h-[28rem] xl:max-h-[58vh] overflow-y-auto`}>
           {t.list.map((m) =>
             m.from === "admin" ? (
               <div key={m.id} className="flex justify-end">
@@ -1072,28 +1072,236 @@ function MessagesPanel({ items }) {
           <button type="submit" disabled={sending} className={`${redBtn} w-full`}>{sending ? "Sending…" : "Send reply"}</button>
         </form>
       </div>
-    );
-  }
-
-  return threads.length === 0 ? (
-    <Empty>No messages yet.</Empty>
   ) : (
-    <ul className="space-y-3">
-      {threads.map((x) => (
-        <li key={x.uid}>
-          <button onClick={() => setOpenUid(x.uid)} className={`${cardCls} w-full text-left p-4 flex items-center gap-3 hover:border-red-600/50 transition cursor-pointer`}>
-            <Avatar name={x.name} photo={x.photo} />
-            <div className="min-w-0 flex-1">
-              <p className="font-bold text-sm truncate">
-                {x.name} {x.unread && <span className="ml-1 text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full align-middle">NEW</span>}
-              </p>
-              <p className="text-xs text-gray-400 truncate">{x.last.from === "admin" ? "You: " : ""}{x.last.text}</p>
-            </div>
-            <span className="text-[10px] text-gray-500 flex-shrink-0">{when(x.last.createdAt)}</span>
+    <div className={`${cardCls} hidden xl:flex items-center justify-center text-sm text-gray-500 min-h-[16rem]`}>Select a conversation</div>
+  );
+
+  const listEl =
+    threads.length === 0 ? (
+      <Empty>No messages yet.</Empty>
+    ) : (
+      <ul className="space-y-2.5">
+        {threads.map((x) => (
+          <li key={x.uid}>
+            <button
+              onClick={() => setOpenUid(x.uid)}
+              className={`${cardCls} w-full text-left p-4 flex items-center gap-3 hover:border-red-600/50 transition cursor-pointer ${x.uid === openUid ? "!border-red-600/70 !from-red-600/15" : ""}`}
+            >
+              <Avatar name={x.name} photo={x.photo} />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-sm truncate">
+                  {x.name} {x.unread && <span className="ml-1 text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full align-middle">NEW</span>}
+                </p>
+                <p className="text-xs text-gray-400 truncate">{x.last.from === "admin" ? "You: " : ""}{x.last.text}</p>
+              </div>
+              <span className="text-[10px] text-gray-500 flex-shrink-0">{when(x.last.createdAt)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+
+  return (
+    <div className="xl:grid xl:grid-cols-[24rem_minmax(0,1fr)] xl:gap-6 items-start">
+      <div className={t ? "hidden xl:block" : ""}>{listEl}</div>
+      <div className={t ? "" : "hidden xl:block"}>{pane}</div>
+    </div>
+  );
+}
+
+// ======================================================================
+// DASHBOARD
+// ======================================================================
+function DashBlock({ title, go, goLabel, children }) {
+  return (
+    <div className={`${cardCls} p-5`}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-black">{title}</h3>
+        <button onClick={go} className="text-xs font-semibold text-red-400 hover:text-red-300 cursor-pointer">{goLabel} →</button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DashboardPanel({ requests, comments, users, titles, messages, go }) {
+  const lastByUser = {};
+  messages.forEach((x) => {
+    if (!lastByUser[x.uid] || secs(x.createdAt) >= secs(lastByUser[x.uid].createdAt)) lastByUser[x.uid] = x;
+  });
+  const lastMsgs = Object.values(lastByUser).sort((a, b) => secs(b.createdAt) - secs(a.createdAt)).slice(0, 5);
+  const pend = requests.filter((r) => (r.status || "pending") === "pending").length;
+  const stats = [
+    ["Users", users.length, "👥", "users", "from-sky-500/25"],
+    ["Pending requests", pend, "🎯", "requests", "from-yellow-500/25"],
+    ["Comments", comments.length, "🗨️", "comments", "from-purple-500/25"],
+    ["Movies & series", titles.length, "🎬", "titles", "from-red-500/30"],
+  ];
+  const none = <p className="text-sm text-gray-500 py-4 text-center">Nothing yet.</p>;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        {stats.map(([label, n, icon, tab, grad]) => (
+          <button key={label} onClick={() => go(tab)} className={`${cardCls} p-5 sm:p-6 text-left hover:border-red-600/50 transition cursor-pointer relative overflow-hidden group`}>
+            <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full bg-gradient-to-br ${grad} to-transparent blur-xl opacity-70 group-hover:opacity-100 transition`} />
+            <p className="text-2xl relative">{icon}</p>
+            <p className="text-3xl sm:text-4xl font-black mt-2 relative">{n}</p>
+            <p className="text-xs text-gray-400 mt-1 relative">{label}</p>
           </button>
-        </li>
-      ))}
-    </ul>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <button onClick={() => go("titles")} className={redBtn}>+ Add movie / series</button>
+        <button onClick={() => go("notify")} className={ghostBtn}>🔔 Send notification</button>
+        <button onClick={() => go("popup")} className={ghostBtn}>📢 Startup popup</button>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <DashBlock title="Latest requests" go={() => go("requests")} goLabel="All requests">
+          {requests.length === 0 ? none : (
+            <ul className="space-y-3">
+              {requests.slice(0, 5).map((r) => (
+                <li key={r.id} className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{r.title} {r.year && <span className="text-gray-500 font-normal">({r.year})</span>}</p>
+                    <p className="text-[11px] text-gray-500 truncate">{r.userName || r.userEmail}</p>
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border flex-shrink-0 ${STATUS_STYLES[r.status] || STATUS_STYLES.pending}`}>{r.status || "pending"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DashBlock>
+
+        <DashBlock title="Latest messages" go={() => go("messages")} goLabel="All messages">
+          {lastMsgs.length === 0 ? none : (
+            <ul className="space-y-3">
+              {lastMsgs.map((m) => (
+                <li key={m.uid} className="flex items-center gap-3">
+                  <Avatar name={m.userName} photo={m.photoURL} size="w-8 h-8" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{m.from === "admin" ? "You" : m.userName}</p>
+                    <p className="text-[11px] text-gray-500 truncate">{m.text}</p>
+                  </div>
+                  {m.from === "user" && <span className="text-[10px] bg-red-600 px-2 py-0.5 rounded-full font-bold">NEW</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </DashBlock>
+
+        <DashBlock title="Latest comments" go={() => go("comments")} goLabel="All comments">
+          {comments.length === 0 ? none : (
+            <ul className="space-y-3">
+              {comments.slice(0, 5).map((c) => (
+                <li key={c.id} className="flex items-center gap-3">
+                  <Avatar name={c.userName} photo={c.photoURL} admin={!!c.isAdmin} size="w-8 h-8" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{c.userName}</p>
+                    <p className="text-[11px] text-gray-500 truncate">{c.text}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DashBlock>
+      </div>
+    </div>
+  );
+}
+
+// ======================================================================
+// POPUP: message shown to visitors when they open the site (once a day)
+// ======================================================================
+function PopupPanel() {
+  const [f, setF] = useState({ enabled: false, title: "", message: "", buttonText: "", buttonUrl: "" });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    getDoc(doc(db, "settings", "popup"))
+      .then((snap) => {
+        const d = snap.data();
+        if (d) setF({ enabled: !!d.enabled, title: d.title || "", message: d.message || "", buttonText: d.buttonText || "", buttonUrl: d.buttonUrl || "" });
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const save = async (e) => {
+    e.preventDefault();
+    setErr("");
+    setNote("");
+    if (f.enabled && !f.message.trim()) return setErr("Write the message first (or turn the popup off).");
+    if (f.buttonUrl.trim() && !/^(https?:\/\/|\/)/i.test(f.buttonUrl.trim())) return setErr("The button link must start with https:// or /");
+    setSaving(true);
+    try {
+      await setDoc(
+        doc(db, "settings", "popup"),
+        {
+          enabled: f.enabled,
+          title: f.title.trim().slice(0, 80),
+          message: f.message.trim().slice(0, 600),
+          buttonText: f.buttonText.trim().slice(0, 30),
+          buttonUrl: f.buttonUrl.trim(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setNote(f.enabled ? "✓ Saved. Visitors will see it the next time they open the site." : "✓ Saved. The popup is turned off.");
+    } catch (e2) {
+      setErr(e2.code === "permission-denied" ? "Blocked by Firestore rules. Publish the latest firestore.rules." : e2.message || "Couldn't save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return <div className={`${cardCls} h-48 animate-pulse`} />;
+  return (
+    <div className="grid gap-6 xl:grid-cols-2 items-start">
+      <form onSubmit={save} className={`${cardCls} p-5 sm:p-7 space-y-4`}>
+        <h3 className="font-black text-lg">Startup popup</h3>
+        <p className="text-xs text-gray-500">Shown when someone opens the website, at most once a day per device. If you change the message it is shown again straight away.</p>
+
+        <label className="flex items-center justify-between gap-3 bg-black/30 border border-white/10 rounded-xl p-4 cursor-pointer">
+          <span className="text-sm font-semibold">Show the popup</span>
+          <input type="checkbox" checked={f.enabled} onChange={(e) => setF((p) => ({ ...p, enabled: e.target.checked }))} className="w-5 h-5 accent-red-600" />
+        </label>
+        <div>
+          <label className={labelCls}>Title</label>
+          <input value={f.title} onChange={set("title")} maxLength={80} placeholder="Important notice" className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Message *</label>
+          <textarea value={f.message} onChange={set("message")} maxLength={600} rows={5} placeholder="Write your message here…" className={`${inputCls} resize-none`} />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Button text (optional)</label>
+            <input value={f.buttonText} onChange={set("buttonText")} maxLength={30} placeholder="Join Telegram" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Button link (optional)</label>
+            <input value={f.buttonUrl} onChange={set("buttonUrl")} placeholder="https://t.me/…" className={inputCls} />
+          </div>
+        </div>
+        {err && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">{err}</p>}
+        {note && <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3">{note}</p>}
+        <button type="submit" disabled={saving} className={`${redBtn} w-full`}>{saving ? "Saving…" : "Save"}</button>
+      </form>
+
+      <div className={`${cardCls} p-5 sm:p-7`}>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-4">Preview</p>
+        <div className="rounded-2xl bg-black/60 border border-white/10 p-4 sm:p-8 flex justify-center">
+          <PopupCard pop={{ ...f, message: f.message || "Your message will look like this." }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1176,73 +1384,118 @@ export default function AdminPage() {
       </Shell>
     );
 
-  const tabs = [
-    ["dashboard", "Dashboard"],
-    ["notify", "Notify"],
-    ["messages", `Messages${unreadMessages ? ` (${unreadMessages})` : ""}`],
-    ["requests", `Requests${pending ? ` (${pending})` : ""}`],
-    ["comments", "Comments"],
-    ["users", "Users"],
-    ["titles", "Movies & Series"],
+  const NAV = [
+    ["dashboard", "Dashboard", "🏠", 0],
+    ["titles", "Movies & Series", "🎬", 0],
+    ["requests", "Requests", "🎯", pending],
+    ["messages", "Messages", "💬", unreadMessages],
+    ["comments", "Comments", "🗨️", 0],
+    ["users", "Users", "👥", 0],
+    ["notify", "Notify", "🔔", 0],
+    ["popup", "Popup", "📢", 0],
   ];
+  const HEAD = {
+    dashboard: ["Overview", "Dashboard"],
+    titles: ["Content", "Movies & Series"],
+    requests: ["People", "Requests"],
+    messages: ["People", "Messages"],
+    comments: ["People", "Comments"],
+    users: ["People", "Users"],
+    notify: ["Announcements", "Send a notification"],
+    popup: ["Announcements", "Startup popup"],
+  };
 
-  const tiles = [
-    ["Users", users.length, "users"],
-    ["Pending requests", pending, "requests"],
-    ["Comments", comments.length, "comments"],
-    ["Added titles", titles.length, "titles"],
-  ];
+  const NavButton = ({ id, label, icon, badge, compact }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={
+        compact
+          ? `px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap cursor-pointer transition ${tab === id ? "bg-red-600 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"}`
+          : `w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition cursor-pointer ${tab === id ? "bg-red-600 text-white shadow-lg shadow-red-600/30" : "text-gray-300 hover:bg-white/10"}`
+      }
+    >
+      {!compact && <span className="text-lg w-6 text-center">{icon}</span>}
+      <span className={compact ? "" : "flex-1 text-left"}>{label}</span>
+      {badge > 0 && <span className={`text-[11px] font-black rounded-full px-2 py-0.5 ${compact || tab === id ? "bg-white text-red-600" : "bg-red-600 text-white"}`}>{badge}</span>}
+    </button>
+  );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans">
-      <header className="sticky top-0 z-30 bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-white/10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <h1 className="font-black text-lg mr-auto">
-            <span className="text-red-600">Cine</span>Labz Admin
-          </h1>
-          <a href="/" className="text-xs text-gray-300 hover:text-white">← Site</a>
-          <Avatar name={user.displayName || user.email} photo={user.photoURL} size="w-8 h-8" />
-          <button onClick={signOutUser} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">Sign out</button>
-        </div>
-        <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto">
-          {tabs.map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap cursor-pointer transition ${
-                tab === id ? "bg-red-600 text-white" : "bg-white/10 text-gray-300 hover:bg-white/20"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-4 py-6 pb-20 space-y-5">
-        {dbError && (
-          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-            Can't load ({dbError}). Publish firestore.rules and check the admin email matches in both places.
-          </p>
-        )}
-
-        {tab === "dashboard" && (
-          <div className="grid grid-cols-2 gap-3">
-            {tiles.map(([label, n, go]) => (
-              <button key={label} onClick={() => setTab(go)} className={`${cardCls} p-5 text-left hover:border-red-600/50 transition cursor-pointer`}>
-                <p className="text-3xl font-black">{n}</p>
-                <p className="text-xs text-gray-400 mt-1">{label}</p>
-              </button>
-            ))}
+    <div className="min-h-screen bg-[#07070b] text-white font-sans relative">
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{ background: "radial-gradient(60rem 30rem at 8% -10%, rgba(220,38,38,0.20), transparent), radial-gradient(40rem 25rem at 100% 0%, rgba(220,38,38,0.08), transparent)" }}
+      />
+      <div className="relative flex min-h-screen">
+        {/* sidebar (computer) */}
+        <aside className="hidden lg:flex w-72 shrink-0 flex-col sticky top-0 h-screen border-r border-white/10 bg-black/40 backdrop-blur-xl p-5">
+          <div className="px-2 py-3 mb-4">
+            <h1 className="font-black text-2xl tracking-tight">
+              <span className="text-red-600">Cine</span>Labz
+            </h1>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-gray-500 mt-0.5">Admin panel</p>
           </div>
-        )}
-        {tab === "requests" && <RequestsPanel items={requests} users={users} />}
-        {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} adminUser={user} />}
-        {tab === "users" && <UsersPanel items={users} />}
-        {tab === "titles" && <TitlesPanel items={titles} />}
-        {tab === "notify" && <NotifyPanel />}
-        {tab === "messages" && <MessagesPanel items={data.messages} />}
-      </main>
+          <nav className="space-y-1.5 flex-1 overflow-y-auto">
+            {NAV.map(([id, label, icon, badge]) => (
+              <NavButton key={id} id={id} label={label} icon={icon} badge={badge} />
+            ))}
+          </nav>
+          <div className="pt-4 mt-4 border-t border-white/10 space-y-3">
+            <div className="flex items-center gap-3 px-1">
+              <Avatar name={user.displayName || user.email} photo={user.photoURL} size="w-10 h-10" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold truncate">{user.displayName || "Admin"}</p>
+                <p className="text-[11px] text-gray-500 truncate">{user.email}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <a href="/" className={`${ghostBtn} flex-1 text-center`}>← Site</a>
+              <button onClick={signOutUser} className="flex-1 bg-red-600/15 text-red-400 hover:bg-red-600 hover:text-white rounded-xl px-4 py-2.5 text-sm font-bold transition cursor-pointer">Sign out</button>
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* header (phone) */}
+          <header className="lg:hidden sticky top-0 z-30 bg-[#07070b]/90 backdrop-blur-xl border-b border-white/10">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <h1 className="font-black text-lg mr-auto">
+                <span className="text-red-600">Cine</span>Labz Admin
+              </h1>
+              <a href="/" className="text-xs text-gray-300 hover:text-white">← Site</a>
+              <Avatar name={user.displayName || user.email} photo={user.photoURL} size="w-8 h-8" />
+              <button onClick={signOutUser} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">Sign out</button>
+            </div>
+            <div className="px-4 pb-3 flex gap-2 overflow-x-auto">
+              {NAV.map(([id, label, icon, badge]) => (
+                <NavButton key={id} id={id} label={label} icon={icon} badge={badge} compact />
+              ))}
+            </div>
+          </header>
+
+          <main className="flex-1 w-full px-4 sm:px-6 lg:px-10 2xl:px-14 py-6 lg:py-10 pb-20 space-y-6">
+            <div>
+              <p className="text-red-500 font-bold text-xs uppercase tracking-widest">{HEAD[tab][0]}</p>
+              <h2 className="text-2xl lg:text-4xl font-black mt-1">{HEAD[tab][1]}</h2>
+            </div>
+
+            {dbError && (
+              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                Can't load ({dbError}). Publish firestore.rules and check the admin email matches in both places.
+              </p>
+            )}
+
+            {tab === "dashboard" && <DashboardPanel requests={requests} comments={comments} users={users} titles={titles} messages={data.messages} go={setTab} />}
+            {tab === "requests" && <RequestsPanel items={requests} users={users} />}
+            {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} adminUser={user} />}
+            {tab === "users" && <UsersPanel items={users} />}
+            {tab === "titles" && <TitlesPanel items={titles} />}
+            {tab === "notify" && <NotifyPanel />}
+            {tab === "popup" && <PopupPanel />}
+            {tab === "messages" && <MessagesPanel items={data.messages} />}
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

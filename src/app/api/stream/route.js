@@ -1,15 +1,18 @@
 // src/app/api/stream/route.js
-// Signed, expiring video links. The page never puts your real video/Telegram-stream URL
-// in the HTML or network tab — only a token that is useless after a few minutes or on another site.
+// Hides the real video link from the page source (the page only contains a signed token).
 //
-//   GET  /api/stream?t=<token>              -> redirects to the real video (used by the player)
-//   POST /api/stream  { url }               -> makes a token for a given url (called by the browser)
+//   POST /api/stream { url }      -> { src: "/api/stream?t=<token>" }
+//   GET  /api/stream?t=<token>    -> 302 redirect to the real video
 //
-// Needs: STREAM_SIGNING_SECRET  env var (any long random string — set once, never share it)
+// IMPORTANT: this does NOT carry the video bytes. An earlier version streamed the whole video
+// through a serverless function, which got cut off after about a minute. Now the browser downloads
+// the video directly from its host. (So the real link can still be seen in the browser's Network tab.)
+//
+// Needs: STREAM_SIGNING_SECRET env var (any long random string)
 import crypto from "node:crypto";
 
 const SECRET = process.env.STREAM_SIGNING_SECRET || "";
-const TTL_MS = 6 * 60 * 1000; // a token is usable for 6 minutes after it's made
+const TTL_MS = 12 * 60 * 60 * 1000; // a token works for 12 hours (long enough for one viewing session)
 
 function sign(payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -36,24 +39,11 @@ export async function POST(req) {
   if (!SECRET) return Response.json({ error: "STREAM_SIGNING_SECRET is not set" }, { status: 500 });
   const { url } = await req.json().catch(() => ({}));
   if (!url || !/^https?:\/\//i.test(url)) return Response.json({ error: "bad url" }, { status: 400 });
-  const token = sign({ url, exp: Date.now() + TTL_MS });
-  return Response.json({ src: `/api/stream?t=${token}` });
+  return Response.json({ src: `/api/stream?t=${sign({ url, exp: Date.now() + TTL_MS })}` });
 }
 
 export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const payload = verify(searchParams.get("t"));
+  const payload = verify(new URL(req.url).searchParams.get("t"));
   if (!payload) return new Response("This link has expired. Reload the page.", { status: 410 });
-
-  const range = req.headers.get("range");
-  const upstream = await fetch(payload.url, { headers: range ? { Range: range } : {} });
-  if (!upstream.ok && upstream.status !== 206) return new Response("Upstream error", { status: 502 });
-
-  const headers = new Headers();
-  for (const h of ["content-type", "content-length", "content-range", "accept-ranges", "etag"]) {
-    const v = upstream.headers.get(h);
-    if (v) headers.set(h, v);
-  }
-  headers.set("Cache-Control", "no-store"); // never cached/shared — it dies with the token
-  return new Response(upstream.body, { status: upstream.status, headers });
+  return new Response(null, { status: 302, headers: { Location: payload.url, "Cache-Control": "no-store" } });
 }

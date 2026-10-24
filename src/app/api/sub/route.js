@@ -4,7 +4,6 @@
 //
 //   GET /api/sub?url=<subtitle link>                       -> subtitle text (for the player)
 //   GET /api/sub?url=<subtitle link>&download=1&name=Title -> file download
-import dns from "node:dns/promises";
 import net from "node:net";
 
 // (No `runtime` export: Node.js is the default, and Next 16 "cacheComponents" does not allow it.)
@@ -50,8 +49,20 @@ async function assertPublic(urlStr) {
   const u = new URL(urlStr);
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Only http/https links are allowed");
   const host = u.hostname.replace(/^\[|\]$/g, "");
-  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
-  if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) throw new Error("That address is not allowed");
+  if (net.isIP(host)) {
+    if (isPrivateIp(host)) throw new Error("That address is not allowed");
+    return;
+  }
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) throw new Error("That address is not allowed");
+  // Where DNS lookups exist (Node / Vercel) also check what the name points to.
+  // (On Cloudflare Workers this step is skipped: Workers can't reach private networks anyway.)
+  try {
+    const dns = await import("node:dns/promises");
+    const addrs = await dns.lookup(host, { all: true });
+    if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) throw new Error("That address is not allowed");
+  } catch (e) {
+    if (e?.message === "That address is not allowed") throw e;
+  }
 }
 
 async function fetchLimited(startUrl) {

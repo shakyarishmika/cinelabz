@@ -7,8 +7,10 @@
 //    with size / delay / position / background settings built into the player
 //  - no native browser controls => no built-in "Download" menu
 //  - mobile: tap to show/hide controls, double-tap left/right to skip 10s,
-//    fullscreen fallback for iPhone.
+//    fullscreen fallback for iPhone
 //  - remembers where you stopped + your subtitle settings
+//  - HLS (.m3u8) support with a Quality menu inside the player (needs: npm install hls.js)
+//  - if the connection drops it reloads the video at the same spot instead of stopping
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -192,7 +194,9 @@ const getFsEl = () => document.fullscreenElement || document.webkitFullscreenEle
 
 // ================================================================= PLAYER
 // subtitles = [{ label, url }]   (url = direct link to .srt / .vtt)
-export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title }) {
+// qualities = ["1080p","720p"] (separate links) + quality = current one + onQuality(label)
+// For .m3u8 links the qualities come from the playlist itself.
+export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title, qualities = [], quality = "", onQuality }) {
   const boxRef = useRef(null);
   const videoRef = useRef(null);
   const barRef = useRef(null);
@@ -203,6 +207,14 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const lastActive = useRef("off");
   const watchdog = useRef(null);
   const nudges = useRef(0);
+  const hlsRef = useRef(null);
+  const pendingSeek = useRef(0); // continue from here after the source changes / reloads
+  const autoplayNext = useRef(false);
+  const resumedOnce = useRef(false);
+  const lastTime = useRef(0);
+  const retries = useRef(0);
+  const retryFrom = useRef(0);
+  const stallTimer = useRef(null);
 
   // playback
   const [playing, setPlaying] = useState(false);
@@ -215,11 +227,14 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const [rate, setRate] = useState(1);
   const [failed, setFailed] = useState(false);
   const [errCode, setErrCode] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0); // bump = reload the video
+  const [levels, setLevels] = useState([]); // HLS qualities [{ index, label, height, bitrate }]
+  const [levelSel, setLevelSel] = useState(-1); // -1 = Auto
+  const [levelNow, setLevelNow] = useState(-1);
   const [logoFailed, setLogoFailed] = useState(false);
   // an http:// video link is blocked on an https:// site (Safari) -> try the https:// version
-  const [playSrc] = useState(() =>
-    typeof window !== "undefined" && window.location.protocol === "https:" && /^http:\/\//i.test(src) ? src.replace(/^http:/i, "https:") : src
-  );
+  const playSrc =
+    typeof window !== "undefined" && window.location.protocol === "https:" && /^http:\/\//i.test(src || "") ? src.replace(/^http:/i, "https:") : src;
   // interface
   const [showUI, setShowUI] = useState(true);
   const [panel, setPanel] = useState(false);
@@ -274,6 +289,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       clearTimeout(hideTimer.current);
       clearTimeout(flashTimer.current);
       clearTimeout(watchdog.current);
+      clearTimeout(stallTimer.current);
     },
     []
   );
@@ -434,6 +450,90 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     if (videoRef.current) videoRef.current.playbackRate = rate;
   }, [rate]);
 
+  // Reload the video at the same spot (connection dropped / stalled). Gives up after 3 tries.
+  const recover = () => {
+    if (retries.current >= 3 || lastTime.current < 1) return false;
+    retries.current += 1;
+    retryFrom.current = lastTime.current;
+    pendingSeek.current = lastTime.current;
+    autoplayNext.current = true;
+    setWaiting(true);
+    setReloadKey((k) => k + 1);
+    return true;
+  };
+
+  // Put the video source on the <video>. .m3u8 (HLS) goes through hls.js, which also gives us the qualities.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !playSrc) return;
+    let dead = false;
+    let hls = null;
+    let netTries = 0;
+    setFailed(false);
+    setLevels([]);
+    setLevelSel(-1);
+    setLevelNow(-1);
+    const native = () => {
+      v.src = playSrc;
+    };
+    if (!/\.m3u8(\?|#|$)/i.test(playSrc)) {
+      native();
+    } else {
+      import("hls.js")
+        .then(({ default: Hls }) => {
+          if (dead) return;
+          if (Hls.isSupported()) {
+            hls = new Hls({ maxBufferLength: 40, enableWorker: true });
+            hlsRef.current = hls;
+            hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+              const best = {};
+              data.levels.forEach((l, i) => {
+                const label = l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps`;
+                if (!best[label] || (l.bitrate || 0) > best[label].bitrate) best[label] = { index: i, label, height: l.height || 0, bitrate: l.bitrate || 0 };
+              });
+              setLevels(Object.values(best).sort((a, b) => b.height - a.height || b.bitrate - a.bitrate));
+            });
+            hls.on(Hls.Events.LEVEL_SWITCHED, (_e, d) => setLevelNow(d.level));
+            hls.on(Hls.Events.ERROR, (_e, d) => {
+              if (!d.fatal) return;
+              if (d.type === Hls.ErrorTypes.NETWORK_ERROR && ++netTries <= 5) hls.startLoad();
+              else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && netTries++ < 5) hls.recoverMediaError();
+              else if (!recover()) setFailed(true);
+            });
+            hls.loadSource(playSrc);
+            hls.attachMedia(v);
+          } else if (v.canPlayType("application/vnd.apple.mpegurl")) native(); // iPhone Safari: built-in HLS
+          else setFailed(true);
+        })
+        .catch(() => {
+          if (dead) return;
+          if (v.canPlayType("application/vnd.apple.mpegurl")) native();
+          else setFailed(true);
+        });
+    }
+    return () => {
+      dead = true;
+      if (hls) hls.destroy();
+      hlsRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playSrc, reloadKey]);
+
+  const pickLevel = (idx) => {
+    setLevelSel(idx);
+    if (hlsRef.current) hlsRef.current.nextLevel = idx; // -1 = automatic
+  };
+  const pickQuality = (q) => {
+    if (q === quality) return;
+    const v = videoRef.current;
+    if (v) {
+      pendingSeek.current = v.currentTime; // keep the same position and keep playing
+      autoplayNext.current = !v.paused;
+    }
+    setWaiting(true);
+    onQuality?.(q);
+  };
+
   // After a seek some files keep playing (time + sound + subtitles) but the picture stays black.
   // If no video frame is painted for 2.5s while the time is moving, nudge the decoder (max 2 times).
   const armWatchdog = () => {
@@ -517,6 +617,8 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     if (!v) return;
     setTime(v.currentTime);
     setBuffered(readBuffered(v));
+    lastTime.current = v.currentTime;
+    if (retries.current && v.currentTime - retryFrom.current > 15) retries.current = 0; // playing fine again
     if (posKey && Date.now() - lastSave.current > 5000) {
       lastSave.current = Date.now();
       try {
@@ -530,12 +632,26 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     const v = videoRef.current;
     if (!v) return;
     setDuration(v.duration || 0);
-    if (!posKey) return;
-    try {
-      const t = Number(localStorage.getItem(posKey));
-      if (t > 5 && t < v.duration - 30) v.currentTime = t;
-    } catch {
-      /* ignore */
+    if (pendingSeek.current > 0) {
+      // quality switch / reload: continue where we were
+      try {
+        v.currentTime = pendingSeek.current;
+      } catch {
+        /* ignore */
+      }
+      pendingSeek.current = 0;
+    } else if (posKey && !resumedOnce.current) {
+      try {
+        const t = Number(localStorage.getItem(posKey));
+        if (t > 5 && t < v.duration - 30) v.currentTime = t;
+      } catch {
+        /* ignore */
+      }
+    }
+    resumedOnce.current = true;
+    if (autoplayNext.current) {
+      autoplayNext.current = false;
+      v.play().catch(() => {});
     }
   };
 
@@ -635,7 +751,6 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       {/* ---------- video (no native controls => no native download menu) ---------- */}
       <video
         ref={videoRef}
-        src={playSrc}
         poster={poster}
         playsInline
         preload="metadata"
@@ -645,9 +760,23 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
-        onWaiting={() => setWaiting(true)}
-        onPlaying={() => setWaiting(false)}
-        onCanPlay={() => setWaiting(false)}
+        onWaiting={() => {
+          setWaiting(true);
+          // stuck loading for 20s without an error -> reload at the same spot
+          clearTimeout(stallTimer.current);
+          stallTimer.current = setTimeout(() => {
+            const el = videoRef.current;
+            if (el && !el.paused && el.readyState < 3) recover();
+          }, 20000);
+        }}
+        onPlaying={() => {
+          setWaiting(false);
+          clearTimeout(stallTimer.current);
+        }}
+        onCanPlay={() => {
+          setWaiting(false);
+          clearTimeout(stallTimer.current);
+        }}
         onSeeked={() => {
           setWaiting(false);
           armWatchdog();
@@ -661,8 +790,9 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           setMuted(e.currentTarget.muted);
         }}
         onError={(e) => {
+          if (!e.currentTarget.getAttribute("src") && !hlsRef.current) return; // source was just cleared
           setErrCode(e.currentTarget.error?.code || 0);
-          setFailed(true);
+          if (!recover()) setFailed(true);
         }}
       />
 
@@ -896,6 +1026,32 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
             </>
           )}
 
+          {(levels.length > 0 || qualities.length > 1) && (
+            <>
+              <Heading>Quality</Heading>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {levels.length > 0 ? (
+                  <>
+                    <button onClick={() => pickLevel(-1)} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${levelSel === -1 ? "bg-red-600" : "bg-white/10 hover:bg-white/20"}`}>
+                      Auto{levelSel === -1 && levels.find((l) => l.index === levelNow) ? ` · ${levels.find((l) => l.index === levelNow).label}` : ""}
+                    </button>
+                    {levels.map((l) => (
+                      <button key={l.index} onClick={() => pickLevel(l.index)} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${levelSel === l.index ? "bg-red-600" : "bg-white/10 hover:bg-white/20"}`}>
+                        {l.label}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  qualities.map((q) => (
+                    <button key={q} onClick={() => pickQuality(q)} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${q === quality ? "bg-red-600" : "bg-white/10 hover:bg-white/20"}`}>
+                      {q}
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
           <Heading>Speed</Heading>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
@@ -958,6 +1114,18 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           <p className="text-[11px] text-gray-500 font-mono">
             error {errCode}: {{ 1: "loading stopped", 2: "network / blocked link", 3: "can't decode (codec)", 4: "link or format not supported" }[errCode] || "unknown"}
           </p>
+          <button
+            onClick={() => {
+              retries.current = 0;
+              if (lastTime.current > 1) pendingSeek.current = lastTime.current;
+              autoplayNext.current = true;
+              setFailed(false);
+              setReloadKey((k) => k + 1);
+            }}
+            className="mt-2 bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition"
+          >
+            Try again
+          </button>
         </div>
       )}
     </div>
