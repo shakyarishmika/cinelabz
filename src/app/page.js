@@ -15,7 +15,6 @@ import NotificationBell from "./NotificationBell";
 import ContactPage from "./ContactPage";
 import DmcaPage from "./DmcaPage";
 import NoticeBar from "./NoticeBar";
-import StartupPopup from "./StartupPopup";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -673,26 +672,27 @@ export default function Home() {
   const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
   // Subtitles always come from the subtitle FILE LINK (not from inside the .mkv)
   const subtitleList = subtitleUrl ? [{ label: "Subtitles", url: subtitleUrl }] : [];
-  // Hide the real video link from the page source: the player gets a signed token link instead.
-  // Not used for Mega embeds (iframe) or HLS .m3u8 playlists (their segments can't go through a token).
-  const isHlsUrl = !!playUrl && /\.m3u8(\?|#|$)/i.test(playUrl);
+  // Hide the real video link from the page / network tab: swap it for a short-lived signed token.
+  // (Not done for Mega embeds, which are already an iframe to Mega's own player.)
   const [tokenSrc, setTokenSrc] = useState(null);
-  const [tokenFailed, setTokenFailed] = useState(false);
   useEffect(() => {
-    setTokenSrc(null);
-    setTokenFailed(false);
-    if (!playUrl || isMegaEmbed || isHlsUrl) return;
+    if (!playUrl || isMegaEmbed) {
+      setTokenSrc(null);
+      return;
+    }
     let alive = true;
-    fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
-      .then((r) => r.json())
-      .then((j) => alive && (j.src ? setTokenSrc(j.src) : setTokenFailed(true)))
-      .catch(() => alive && setTokenFailed(true));
+    const getToken = () =>
+      fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
+        .then((r) => r.json())
+        .then((j) => alive && j.src && setTokenSrc(j.src))
+        .catch(() => {});
+    getToken();
+    const t = setInterval(getToken, 5 * 60 * 1000); // refresh before the old token expires
     return () => {
       alive = false;
+      clearInterval(t);
     };
-  }, [playUrl, isMegaEmbed, isHlsUrl]);
-  // what the player really plays (null = still waiting for the token)
-  const finalSrc = !playUrl ? null : isMegaEmbed || isHlsUrl || tokenFailed ? playUrl : tokenSrc;
+  }, [playUrl, isMegaEmbed]);
   const downloadTitle = activeEpisode
     ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
     : selectedMovie?.title;
@@ -1375,7 +1375,7 @@ export default function Home() {
                 )}
               </div>
 
-              {source?.videoLinks && isMegaEmbed && (
+              {source?.videoLinks && (
                 <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto bg-neutral-900 border border-white/10 px-4 py-2 rounded-xl shadow-lg">
                   <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Quality:</span>
                   <select
@@ -1405,22 +1405,15 @@ export default function Home() {
                   loading="lazy"
                 ></iframe>
               </div>
-            ) : finalSrc ? (
+            ) : (
               <AdvancedPlayer
-                key={`${selectedMovie.id}-${activeSeason?.number ?? 0}-${activeEpisode?.number ?? 0}`}
-                src={finalSrc}
+                key={tokenSrc || playUrl}
+                src={tokenSrc || playUrl}
                 poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 subtitles={subtitleList}
                 title={downloadTitle}
                 storageKey={`${selectedMovie.id}-${activeEpisode ? `${activeSeason.number}-${activeEpisode.number}` : "m"}`}
-                qualities={qualityKeys}
-                quality={qualityKeys.includes(selectedQuality) ? selectedQuality : qualityKeys[0] || ""}
-                onQuality={setSelectedQuality}
               />
-            ) : (
-              <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl border-y sm:border border-white/10 flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full border-4 border-red-600/30 border-t-red-600 animate-spin" />
-              </div>
             )}
 
             {/* TV series: season dropdown + episode list */}
@@ -1694,8 +1687,6 @@ export default function Home() {
       )}
 
       {/* --- GOOGLE SIGN-IN POPUP --- */}
-      <StartupPopup />
-
       <SignInModal
         open={showSignIn && !user}
         onClose={() => setShowSignIn(false)}

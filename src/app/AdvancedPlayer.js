@@ -208,6 +208,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const watchdog = useRef(null);
   const nudges = useRef(0);
   const hlsRef = useRef(null);
+  const ambientRef = useRef(null);
   const pendingSeek = useRef(0); // continue from here after the source changes / reloads
   const autoplayNext = useRef(false);
   const resumedOnce = useRef(false);
@@ -254,6 +255,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const [size, setSize] = useState(100); // %
   const [boxBg, setBoxBg] = useState(false); // dark box behind the text (off by default)
   const [lift, setLift] = useState(0); // move subtitles up/down
+  const [ambient, setAmbient] = useState(true); // soft glow around the player that follows the picture
   const [cueIdx, setCueIdx] = useState([]);
 
   const isFs = nativeFs || pseudoFs;
@@ -301,17 +303,19 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       if (typeof p.size === "number") setSize(p.size);
       if (typeof p.boxBg === "boolean") setBoxBg(p.boxBg);
       if (typeof p.lift === "number") setLift(p.lift);
+      if (typeof p.ambient === "boolean") setAmbient(p.ambient);
+      else if (window.matchMedia("(hover: none)").matches) setAmbient(false); // phones: off by default (saves battery)
     } catch {
       /* ignore */
     }
   }, []);
   useEffect(() => {
     try {
-      localStorage.setItem("cl-sub-prefs", JSON.stringify({ size, boxBg, lift }));
+      localStorage.setItem("cl-sub-prefs", JSON.stringify({ size, boxBg, lift, ambient }));
     } catch {
       /* ignore */
     }
-  }, [size, boxBg, lift]);
+  }, [size, boxBg, lift, ambient]);
 
   // ---------- device checks + size of the player (for subtitle font size)
   useEffect(() => {
@@ -449,6 +453,37 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = rate;
   }, [rate]);
+
+  // Ambient light: draw a tiny copy of the picture and blur it behind the player
+  useEffect(() => {
+    const v = videoRef.current;
+    const c = ambientRef.current;
+    if (!ambient || !v || !c || pseudoFs) return;
+    const ctx = c.getContext("2d");
+    let stop = false;
+    let last = 0;
+    let raf = 0;
+    const draw = () => {
+      try {
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+      } catch {
+        /* the browser refused to read this video: just no glow */
+      }
+    };
+    const tick = (now) => {
+      if (stop) return;
+      if (!document.hidden && v.readyState >= 2 && now - last > (v.paused ? 600 : 90)) {
+        last = now;
+        draw();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      stop = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [ambient, pseudoFs]);
 
   // Reload the video at the same spot (connection dropped / stalled). Gives up after 3 tries.
   const recover = () => {
@@ -726,6 +761,26 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
   const hit = uiVisible ? "pointer-events-auto" : "pointer-events-none";
 
   return (
+    <div className={pseudoFs ? "" : "relative -mx-4 sm:mx-0"}>
+      {ambient && !pseudoFs && (
+        <canvas
+          ref={ambientRef}
+          width={64}
+          height={36}
+          aria-hidden="true"
+          className="absolute pointer-events-none"
+          style={{
+            left: "-5%",
+            top: "-9%",
+            width: "110%",
+            height: "118%",
+            filter: "blur(38px) saturate(1.7)",
+            opacity: playing ? 0.65 : 0.35,
+            transition: "opacity .8s",
+            zIndex: 0,
+          }}
+        />
+      )}
     <div
       ref={boxRef}
       tabIndex={0}
@@ -735,7 +790,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       className={`cl-player text-white select-none bg-black overflow-hidden outline-none ${
         pseudoFs
           ? "fixed inset-0 z-[200] w-screen"
-          : "relative aspect-video -mx-4 sm:mx-0 rounded-none sm:rounded-3xl border-y sm:border border-white/10 shadow-2xl shadow-black/60"
+          : "relative z-[1] aspect-video rounded-none sm:rounded-3xl border-y sm:border border-white/10 shadow-2xl shadow-black/60"
       } ${isFs && !uiVisible ? "cursor-none" : ""}`}
       style={pseudoFs ? { height: "100dvh" } : undefined}
     >
@@ -1026,6 +1081,11 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
             </>
           )}
 
+          <Heading>Display</Heading>
+          <Row label="Ambient light (glow)">
+            <Switch on={ambient} onChange={setAmbient} label="Ambient light" />
+          </Row>
+
           {(levels.length > 0 || qualities.length > 1) && (
             <>
               <Heading>Quality</Heading>
@@ -1128,6 +1188,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
           </button>
         </div>
       )}
+    </div>
     </div>
   );
 }

@@ -59,6 +59,35 @@ function parseQualityLinks(text) {
 }
 const qualityLinksToText = (obj) => Object.entries(obj || {}).map(([k, v]) => `${k} | ${v}`).join("\n");
 const QUALITY_HINT = "One per line, e.g.  1080p | https://…   (adds a Quality menu in the player). A single .m3u8 HLS link already lists its own qualities, so you only need it in the Video link box.";
+// Extra servers (Server 2 / 3 / 4): your own custom players, one link each
+const ALT_KEYS = [
+  ["s2", "Server 2"],
+  ["s3", "Server 3"],
+  ["s4", "Server 4"],
+];
+const altFrom = (o) => {
+  const out = {};
+  ALT_KEYS.forEach(([k]) => {
+    const v = (o?.[k] || "").trim();
+    if (v) out[k] = v;
+  });
+  return out;
+};
+function AltServerFields({ value, onChange }) {
+  return (
+    <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
+      <p className={labelCls}>Extra servers (optional)</p>
+      {ALT_KEYS.map(([k, label]) => (
+        <div key={k}>
+          <label className="block text-[11px] text-gray-400 mb-1">{label}</label>
+          <input value={value?.[k] || ""} onChange={(e) => onChange(k, e.target.value)} placeholder="Link for your custom player" className={inputCls} />
+        </div>
+      ))}
+      <p className="text-[11px] text-gray-500">Shown under the player as Server 2 / 3 / 4. The player code for each one is in src/app/servers/.</p>
+    </div>
+  );
+}
+
 const validTelegram = (u) => !u || /^https?:\/\/(t|telegram)\.me\//i.test(u);
 const TG_ERR = "Telegram link must look like https://t.me/YourBot?start=abc";
 const serversToText = (list) =>
@@ -377,6 +406,7 @@ function TitleForm({ initial, onDone }) {
     servers: serversToText(initial?.downloads?.direct),
     telegramUrl: initial?.downloads?.telegramUrl || "",
     streamCode: initial?.streamCode || "",
+    alt: { s2: initial?.altServers?.s2 || "", s3: initial?.altServers?.s3 || "", s4: initial?.altServers?.s4 || "" },
   }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -388,8 +418,9 @@ function TitleForm({ initial, onDone }) {
     setErr("");
     if (f.title.trim().length < 2) return setErr("Enter a title.");
     const links = parseQualityLinks(f.qualityLinks);
-    if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length)
-      return setErr("Enter a video link, quality links, or a Telegram stream code.");
+    const alt = altFrom(f.alt);
+    if (!isSeries && !f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length && !Object.keys(alt).length)
+      return setErr("Enter a video link, quality links, a Telegram stream code, or a Server 2/3/4 link.");
 
     const direct = parseServers(f.servers);
     if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
@@ -417,6 +448,7 @@ function TitleForm({ initial, onDone }) {
             videoUrl: f.videoUrl.trim(),
             videoLinks: Object.keys(links).length ? links : null,
             streamCode: f.streamCode.trim(),
+            altServers: Object.keys(alt).length ? alt : null,
             downloads: hasDownloads ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
           }),
     };
@@ -597,6 +629,7 @@ function TitleForm({ initial, onDone }) {
             <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…\n480p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
             <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
           </div>
+          <AltServerFields value={f.alt} onChange={(k, v) => setF((p) => ({ ...p, alt: { ...p.alt, [k]: v } }))} />
           <div>
             <label className={labelCls}>Telegram stream code (video only, optional)</label>
             <input value={f.streamCode} onChange={set("streamCode")} placeholder="m_inception" className={inputCls} />
@@ -639,7 +672,7 @@ function TitleForm({ initial, onDone }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", subtitleUrl: "", subtitleDownloadUrl: "", servers: "", telegramUrl: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", alt: { s2: "", s3: "", s4: "" }, subtitleUrl: "", subtitleDownloadUrl: "", servers: "", telegramUrl: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -653,8 +686,9 @@ function EpisodesManager({ title, onBack }) {
     const eNo = parseInt(f.ep, 10);
     if (!(sNo >= 1) || !(eNo >= 1)) return setErr("Season and episode numbers must be 1 or more.");
     const links = parseQualityLinks(f.qualityLinks);
-    if (!f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length)
-      return setErr("Enter a video link, quality links, or a Telegram stream code.");
+    const alt = altFrom(f.alt);
+    if (!f.videoUrl.trim() && !f.streamCode.trim() && !Object.keys(links).length && !Object.keys(alt).length)
+      return setErr("Enter a video link, quality links, a Telegram stream code, or a Server 2/3/4 link.");
 
     const direct = parseServers(f.servers);
     if (!validTelegram(f.telegramUrl.trim())) return setErr(TG_ERR);
@@ -665,6 +699,7 @@ function EpisodesManager({ title, onBack }) {
       videoUrl: f.videoUrl.trim(),
       videoLinks: Object.keys(links).length ? links : null,
       streamCode: f.streamCode.trim(),
+      altServers: Object.keys(alt).length ? alt : null,
       subtitleUrl: f.subtitleUrl.trim(),
       subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       downloads: direct.length || f.telegramUrl.trim() ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
@@ -710,6 +745,7 @@ function EpisodesManager({ title, onBack }) {
       videoUrl: ep.videoUrl || "",
       qualityLinks: qualityLinksToText(ep.videoLinks),
       streamCode: ep.streamCode || "",
+      alt: { s2: ep.altServers?.s2 || "", s3: ep.altServers?.s3 || "", s4: ep.altServers?.s4 || "" },
       subtitleUrl: ep.subtitleUrl || "",
       subtitleDownloadUrl: ep.subtitleDownloadUrl || "",
       servers: serversToText(ep.downloads?.direct),
@@ -774,6 +810,7 @@ function EpisodesManager({ title, onBack }) {
           <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
           <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
         </div>
+        <AltServerFields value={f.alt} onChange={(k, v) => setF((p) => ({ ...p, alt: { ...p.alt, [k]: v } }))} />
         <div>
           <label className={labelCls}>Telegram stream code (video only, optional)</label>
           <input value={f.streamCode} onChange={set("streamCode")} placeholder="show_s1e1" className={inputCls} />
