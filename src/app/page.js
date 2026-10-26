@@ -15,6 +15,11 @@ import NotificationBell from "./NotificationBell";
 import ContactPage from "./ContactPage";
 import DmcaPage from "./DmcaPage";
 import NoticeBar from "./NoticeBar";
+import StartupPopup from "./StartupPopup";
+import TmdbAttribution from "./TmdbAttribution";
+import RecentUploads from "./RecentUploads";
+import ServerBar from "./ServerBar";
+import { SERVER_SLOTS } from "./servers";
 import AdvancedPlayer from "./AdvancedPlayer";
 import RequestPage from "./RequestPage";
 
@@ -147,6 +152,7 @@ export default function Home() {
   const [selectedQuality, setSelectedQuality] = useState("");
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
+  const [server, setServer] = useState("main"); // main | s2 | s3 | s4
   const [selectedActor, setSelectedActor] = useState(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
@@ -672,27 +678,41 @@ export default function Home() {
   const playUrl = useStream ? `${STREAM_BASE}/stream/${encodeURIComponent(streamCode)}` : currentLink;
   // Subtitles always come from the subtitle FILE LINK (not from inside the .mkv)
   const subtitleList = subtitleUrl ? [{ label: "Subtitles", url: subtitleUrl }] : [];
-  // Hide the real video link from the page / network tab: swap it for a short-lived signed token.
-  // (Not done for Mega embeds, which are already an iframe to Mega's own player.)
+  // Hide the real video link from the page source: the player gets a signed token link instead.
+  // Not used for Mega embeds (iframe) or HLS .m3u8 playlists (their segments can't go through a token).
+  const isHlsUrl = !!playUrl && /\.m3u8(\?|#|$)/i.test(playUrl);
   const [tokenSrc, setTokenSrc] = useState(null);
+  const [tokenFailed, setTokenFailed] = useState(false);
   useEffect(() => {
-    if (!playUrl || isMegaEmbed) {
-      setTokenSrc(null);
-      return;
-    }
+    setTokenSrc(null);
+    setTokenFailed(false);
+    if (!playUrl || isMegaEmbed || isHlsUrl) return;
     let alive = true;
-    const getToken = () =>
-      fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
-        .then((r) => r.json())
-        .then((j) => alive && j.src && setTokenSrc(j.src))
-        .catch(() => {});
-    getToken();
-    const t = setInterval(getToken, 5 * 60 * 1000); // refresh before the old token expires
+    fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
+      .then((r) => r.json())
+      .then((j) => alive && (j.src ? setTokenSrc(j.src) : setTokenFailed(true)))
+      .catch(() => alive && setTokenFailed(true));
     return () => {
       alive = false;
-      clearInterval(t);
     };
-  }, [playUrl, isMegaEmbed]);
+  }, [playUrl, isMegaEmbed, isHlsUrl]);
+  // what the player really plays (null = still waiting for the token)
+  const finalSrc = !playUrl ? null : isMegaEmbed || isHlsUrl || tokenFailed ? playUrl : tokenSrc;
+
+  // Servers under the player: Main = the links from the admin panel, Server 2/3/4 = your custom players
+  const altKeys = SERVER_SLOTS.map((s) => s.id).filter((id) => source?.altServers?.[id]);
+  const hasMain = !!playUrl;
+  const wanted = server === "main" && !hasMain ? altKeys[0] : server;
+  const altId = wanted !== "main" && altKeys.includes(wanted) ? wanted : "main";
+  const AltPlayer = altId !== "main" ? SERVER_SLOTS.find((s) => s.id === altId)?.Component : null;
+  const serverList = [
+    ...(hasMain ? [{ id: "main", label: "Main" }] : []),
+    ...SERVER_SLOTS.filter((s) => altKeys.includes(s.id)).map((s) => ({ id: s.id, label: s.label })),
+  ];
+  useEffect(() => {
+    setServer("main"); // new film / episode -> back to Main
+  }, [selectedId, selectedSeason, selectedEpisode]);
+  const recentAll = movies.slice(0, 16); // newest first (titles added from the admin panel)
   const downloadTitle = activeEpisode
     ? `${selectedMovie.title} S${activeSeason.number}E${activeEpisode.number}`
     : selectedMovie?.title;
@@ -1375,7 +1395,7 @@ export default function Home() {
                 )}
               </div>
 
-              {source?.videoLinks && (
+              {source?.videoLinks && isMegaEmbed && (
                 <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto bg-neutral-900 border border-white/10 px-4 py-2 rounded-xl shadow-lg">
                   <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Quality:</span>
                   <select
@@ -1395,7 +1415,14 @@ export default function Home() {
 
             <NoticeBar notice={selectedMovie.notice} />
 
-            {isMegaEmbed ? (
+            {AltPlayer ? (
+              <AltPlayer
+                url={source.altServers[altId]}
+                poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
+                title={downloadTitle}
+                subtitles={subtitleList}
+              />
+            ) : isMegaEmbed ? (
               <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl border-y sm:border border-white/10">
                 <iframe
                   src={currentLink}
@@ -1405,16 +1432,25 @@ export default function Home() {
                   loading="lazy"
                 ></iframe>
               </div>
-            ) : (
+            ) : finalSrc ? (
               <AdvancedPlayer
-                key={tokenSrc || playUrl}
-                src={tokenSrc || playUrl}
+                key={`${selectedMovie.id}-${activeSeason?.number ?? 0}-${activeEpisode?.number ?? 0}`}
+                src={finalSrc}
                 poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 subtitles={subtitleList}
                 title={downloadTitle}
                 storageKey={`${selectedMovie.id}-${activeEpisode ? `${activeSeason.number}-${activeEpisode.number}` : "m"}`}
+                qualities={qualityKeys}
+                quality={qualityKeys.includes(selectedQuality) ? selectedQuality : qualityKeys[0] || ""}
+                onQuality={setSelectedQuality}
               />
+            ) : (
+              <div className="relative aspect-video bg-black -mx-4 sm:mx-0 rounded-none sm:rounded-3xl border-y sm:border border-white/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full border-4 border-red-600/30 border-t-red-600 animate-spin" />
+              </div>
             )}
+
+            <ServerBar servers={serverList} value={altId} onChange={setServer} />
 
             {/* TV series: season dropdown + episode list */}
             {selectedMovie.seasons && (
@@ -1435,81 +1471,142 @@ export default function Home() {
             <DownloadButtons downloads={source?.downloads} title={downloadTitle} subtitleUrl={subtitleDownloadUrl} />
           </div>
 
-          {/* DETAILS + CAST */}
-          <div className="bg-neutral-900/60 border border-white/10 p-5 sm:p-8 rounded-3xl backdrop-blur-md space-y-6">
-            <div className="flex flex-col sm:flex-row gap-6">
+          {/* ABOUT */}
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-neutral-950">
+            {(selectedMovie.backdrop || selectedMovie.poster) && (
               <img
-                src={selectedMovie.poster || FALLBACK_POSTER}
-                alt={selectedMovie.title}
-                className="w-40 sm:w-48 rounded-2xl shadow-xl self-center sm:self-start flex-shrink-0 border border-white/10"
-                onError={onImgError(FALLBACK_POSTER)}
+                src={selectedMovie.backdrop || selectedMovie.poster}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover opacity-25 scale-110 blur-sm"
+                onError={(e) => (e.target.style.display = "none")}
               />
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-lg font-bold text-red-500 uppercase tracking-widest mb-2">
-                    About Movie / සිංහල විස්තරය
-                  </h3>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/85 to-neutral-950/50" />
+            <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 rounded-full bg-red-600/20 blur-3xl" />
+
+            <div className="relative p-5 sm:p-8 space-y-8">
+              <div className="flex items-center gap-3">
+                <span className="w-1.5 h-7 rounded-full bg-gradient-to-b from-red-500 to-red-800" />
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                  About this {selectedMovie.type === "series" ? "series" : "movie"}
+                </h2>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
+                <div className="relative self-center sm:self-start flex-shrink-0">
+                  <div className="absolute -inset-2 rounded-3xl bg-gradient-to-br from-red-600/50 to-transparent blur-xl opacity-60" />
+                  <img
+                    src={selectedMovie.poster || FALLBACK_POSTER}
+                    alt={selectedMovie.title}
+                    className="relative w-40 sm:w-52 rounded-2xl shadow-2xl ring-1 ring-white/20"
+                    onError={onImgError(FALLBACK_POSTER)}
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1 space-y-5">
+                  <div>
+                    <h3 className="text-2xl sm:text-3xl font-black leading-tight">{selectedMovie.title}</h3>
+                    {selectedMovie.tagline && <p className="text-sm text-red-400 italic mt-1">“{selectedMovie.tagline}”</p>}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 text-xs font-bold">
+                    {selectedMovie.rating && (
+                      <span className="inline-flex items-center gap-1 bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 px-3 py-1.5 rounded-full">⭐ {selectedMovie.rating}</span>
+                    )}
+                    {selectedMovie.year && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">{selectedMovie.year}</span>}
+                    {selectedMovie.language && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">🌐 {selectedMovie.language}</span>}
+                    {selectedMovie.quality && <span className="bg-red-600/20 border border-red-600/40 text-red-300 px-3 py-1.5 rounded-full">{selectedMovie.quality}</span>}
+                    {selectedMovie.type === "series" && selectedMovie.status && (
+                      <span className="bg-sky-400/15 border border-sky-400/30 text-sky-300 px-3 py-1.5 rounded-full capitalize">{selectedMovie.status}</span>
+                    )}
+                    {selectedMovie.seasons?.length > 0 && (
+                      <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">
+                        {selectedMovie.seasons.length} season{selectedMovie.seasons.length === 1 ? "" : "s"} •{" "}
+                        {selectedMovie.seasons.reduce((n, s) => n + s.episodes.length, 0)} episodes
+                      </span>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const g = selectedMovie.genres?.length
+                      ? selectedMovie.genres
+                      : (selectedMovie.category || "").split("/").map((x) => x.trim()).filter(Boolean);
+                    return g.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {g.map((x) => (
+                          <span key={x} className="text-[11px] font-semibold tracking-wide text-gray-300 border border-white/15 rounded-full px-3 py-1">
+                            {x}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {selectedMovie.overview ? (
+                    <p className="text-gray-300 text-sm sm:text-base leading-relaxed">{selectedMovie.overview}</p>
+                  ) : (
+                    !selectedMovie.sinhalaDescription && <p className="text-gray-500 text-sm">Loading description…</p>
+                  )}
+
                   {selectedMovie.sinhalaDescription && (
-                    <p className="text-gray-200 text-sm sm:text-base leading-relaxed mb-3">
-                      {selectedMovie.sinhalaDescription}
+                    <div className="rounded-2xl bg-white/5 border border-white/10 border-l-4 border-l-red-600 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-1">සිංහල විස්තරය</p>
+                      <p className="text-gray-200 text-sm sm:text-base leading-relaxed">{selectedMovie.sinhalaDescription}</p>
+                    </div>
+                  )}
+
+                  {selectedMovie.director && (
+                    <p className="text-sm text-gray-400">
+                      <span className="text-gray-200 font-semibold">Director:</span> {selectedMovie.director}
                     </p>
                   )}
-                  {selectedMovie.overview ? (
-                    <p className="text-gray-400 text-sm sm:text-base leading-relaxed">{selectedMovie.overview}</p>
-                  ) : (
-                    !selectedMovie.sinhalaDescription && (
-                      <p className="text-gray-500 text-sm">Loading description…</p>
-                    )
-                  )}
                 </div>
-                {selectedMovie.director && (
-                  <p className="text-sm text-gray-400">
-                    <span className="text-gray-200 font-semibold">Director:</span> {selectedMovie.director}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
+                  <h3 className="text-base font-black uppercase tracking-wider">Top Cast / ප්‍රධාන නළුවන්</h3>
+                  <span className="text-xs text-gray-500">Tap a cast member to see their films</span>
+                </div>
+
+                {selectedMovie.castList && selectedMovie.castList.length > 0 ? (
+                  <div className="flex gap-4 overflow-x-auto snap-x pb-4 scroll-smooth" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                    {selectedMovie.castList.map((actor, idx) => (
+                      <div
+                        key={`${actor.name}-${idx}`}
+                        onClick={() => handleSelectActor(actor.name)}
+                        className="snap-start min-w-[140px] w-[150px] bg-white/5 border border-white/10 p-3 rounded-2xl hover:bg-white/10 hover:border-red-600/50 hover:-translate-y-1 transition-all duration-300 group cursor-pointer flex-shrink-0 flex flex-col items-center text-center"
+                      >
+                        <div className="relative w-20 h-20 mb-3 rounded-full overflow-hidden ring-2 ring-red-600/40 group-hover:ring-red-600 transition">
+                          <img
+                            src={actor.image || FALLBACK_ACTOR}
+                            alt={actor.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-110 transition duration-300"
+                            onError={onImgError(FALLBACK_ACTOR)}
+                          />
+                        </div>
+                        <h4 className="font-bold text-xs text-white group-hover:text-red-500 transition line-clamp-1">{actor.name}</h4>
+                        <p className="text-[10px] text-gray-400 line-clamp-1 mt-0.5">{actor.role}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400">
+                    {tmdbData[selectedMovie.id] ? selectedMovie.cast || "Cast information not available." : "Loading cast…"}
                   </p>
                 )}
               </div>
             </div>
+          </section>
 
-            <div>
-              <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
-                <h3 className="text-md font-bold text-gray-200 uppercase tracking-wider">Top Cast / ප්‍රධාන නළුවන්</h3>
-                <span className="text-xs text-gray-400">Click a cast member to view their movies</span>
-              </div>
-
-              {selectedMovie.castList && selectedMovie.castList.length > 0 ? (
-                <div
-                  className="flex gap-4 overflow-x-auto pb-4 scroll-smooth"
-                  style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-                >
-                  {selectedMovie.castList.map((actor, idx) => (
-                    <div
-                      key={`${actor.name}-${idx}`}
-                      onClick={() => handleSelectActor(actor.name)}
-                      className="min-w-[150px] w-[160px] bg-white/5 border border-white/10 p-3 rounded-2xl hover:bg-white/10 hover:border-red-600/50 hover:scale-105 transition-all duration-300 group cursor-pointer flex-shrink-0 flex flex-col items-center text-center"
-                    >
-                      <div className="relative w-20 h-20 mb-3 rounded-full overflow-hidden ring-2 ring-red-600/40 group-hover:ring-red-600 transition">
-                        <img
-                          src={actor.image || FALLBACK_ACTOR}
-                          alt={actor.name}
-                          loading="lazy"
-                          className="w-full h-full object-cover group-hover:scale-110 transition duration-300"
-                          onError={onImgError(FALLBACK_ACTOR)}
-                        />
-                      </div>
-                      <h4 className="font-bold text-xs text-white group-hover:text-red-500 transition line-clamp-1">
-                        {actor.name}
-                      </h4>
-                      <p className="text-[10px] text-gray-400 line-clamp-1 mt-0.5">{actor.role}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400">
-                  {tmdbData[selectedMovie.id] ? selectedMovie.cast || "Cast information not available." : "Loading cast…"}
-                </p>
-              )}
-            </div>
-          </div>
+          <RecentUploads
+            items={recentAll.filter((m) => m.id !== selectedMovie.id).slice(0, 14)}
+            onSelect={handleSelectMovie}
+            fallback={FALLBACK_POSTER}
+            title="Recently uploaded"
+          />
 
           {/* COMMENTS (sign in to post) */}
           <Comments contentId={selectedMovie.id} user={user} authLoading={authLoading} onSignIn={openSignIn} />
@@ -1577,6 +1674,12 @@ export default function Home() {
                 )}
               </div>
               <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }`}</style>
+            </div>
+          )}
+
+          {showHero && recentAll.length > 0 && (
+            <div className="max-w-7xl w-full mx-auto px-6 pt-10">
+              <RecentUploads items={recentAll.slice(0, 14)} onSelect={handleSelectMovie} fallback={FALLBACK_POSTER} title="Recently uploaded" />
             </div>
           )}
 
@@ -1687,6 +1790,8 @@ export default function Home() {
       )}
 
       {/* --- GOOGLE SIGN-IN POPUP --- */}
+      <StartupPopup />
+
       <SignInModal
         open={showSignIn && !user}
         onClose={() => setShowSignIn(false)}
@@ -1704,7 +1809,9 @@ export default function Home() {
       />
 
       {/* --- FOOTER --- */}
-      <footer className="mt-auto border-t border-white/10 bg-black/40 backdrop-blur-md">
+      <div className="mt-auto">
+        <TmdbAttribution />
+      <footer className="border-t border-white/10 bg-black/40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs sm:text-sm text-gray-400 text-center sm:text-left">
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
@@ -1733,6 +1840,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 
