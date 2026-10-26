@@ -12,8 +12,32 @@
 //  Return any React element (keep the 16:9 shape, e.g. "relative aspect-video").
 //  Until you replace it, it simply opens the link inside a frame.
 // ===========================================================================
-import EmbedFrame from "./EmbedFrame";
+import React from 'react';
 
-export default function Server3({ url, title }) {
-  return <EmbedFrame url={url} title={title} />;
+export default function Server3({ url, poster, title, subtitles }) {
+  return (
+    <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl flex items-center justify-center">
+      {url ? (
+        <iframe
+          src={url}
+          title={title || "Movie Embed Player - Server 3"}
+          className="absolute top-0 left-0 w-full h-full border-0"
+          scrolling="no"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 text-gray-400 p-4">
+          {poster && (
+            <img 
+              src={poster} 
+              alt={title} 
+              className="w-24 h-36 object-cover rounded shadow-md mb-3 opacity-60" 
+            />
+          )}
+          <p className="text-sm font-medium">Server 3 (Backup Embed) is not configured.</p>
+        </div>
+      )}
+    </div>
+  );
 }
