@@ -1816,7 +1816,7 @@ export default function Home() {
           <p className="text-xs sm:text-sm text-gray-400 text-center sm:text-left">
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
             <span className="mx-2 text-gray-600">|</span>
-            Developed by <span className="text-white font-semibold">Cloud + Shakya</span>
+            Developed by <span className="text-white font-semibold">Shakya Rishmika</span>
             <span className="mx-2 text-gray-600">|</span>
             <button onClick={openDmca} className="text-gray-300 hover:text-red-500 underline-offset-4 hover:underline cursor-pointer transition">
               DMCA Policy
