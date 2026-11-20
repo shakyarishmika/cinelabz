@@ -53,6 +53,7 @@ export default function RecentUploads({ items, onSelect, fallback, title = "Rece
                 <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 to-transparent" />
                 {isNew && <span className="absolute top-2 left-2 bg-red-600 text-[10px] font-black px-2 py-0.5 rounded-full shadow">NEW</span>}
                 {item.rating && <span className="absolute top-2 right-2 bg-black/70 text-yellow-400 text-[10px] font-bold px-2 py-0.5 rounded-full">⭐ {item.rating}</span>}
+                {item.adult && <span className="absolute bottom-2 right-2 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md ring-1 ring-white/40">18+</span>}
                 <span className="absolute bottom-2 left-2 text-[10px] font-bold uppercase tracking-wider text-white/80">{item.type === "series" ? "TV Series" : "Movie"}</span>
               </div>
               <p className="mt-2 text-xs sm:text-sm font-semibold truncate group-hover:text-red-500 transition">{item.title}</p>

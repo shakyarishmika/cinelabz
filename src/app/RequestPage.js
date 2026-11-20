@@ -5,7 +5,7 @@ import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from "f
 import { db } from "./firebase";
 import TelegramLogo from "./TelegramLogo";
 
-const LANGS = ["English", "Tamil", "Hindi", "Kannada", "Korean", "Other"];
+const LANGS = ["English", "Tamil", "Hindi", "Telugu", "Malayalam", "Kannada", "Korean", "Other"];
 
 const STATUS_STYLES = {
   pending: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",

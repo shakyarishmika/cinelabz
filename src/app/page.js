@@ -448,7 +448,7 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const languages = ["All", "English", "Tamil", "Hindi", "Kannada", "Korean"];
+  const languages = ["All", "English", "Tamil", "Hindi", "Telugu", "Malayalam", "Kannada", "Korean"];
   const genres = ["All", "Action", "Sci-Fi", "Thriller", "Adventure", "Drama", "Crime", "Fantasy"];
 
   // ---------- Filtering ----------
@@ -756,6 +756,9 @@ export default function Home() {
         <span className="absolute top-3 right-3 bg-black/60 text-red-500 text-xs px-3 py-1 rounded-full font-bold">
           {item.quality || "HD"}
         </span>
+        {item.adult && (
+          <span className="absolute top-3 left-3 bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded-md ring-1 ring-white/40 shadow-lg">18+</span>
+        )}
       </div>
       <div className="p-3 sm:p-4">
         <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
@@ -800,6 +803,9 @@ export default function Home() {
               <span className="absolute top-2 right-2 bg-black/70 text-yellow-400 text-xs px-2 py-0.5 rounded font-bold">
                 ⭐ {item.rating}
               </span>
+              {item.adult && (
+                <span className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md ring-1 ring-white/40">18+</span>
+              )}
               <div className="absolute bottom-2 left-2 right-2 z-30">
                 <h4 className="font-bold text-xs text-white truncate">{item.title}</h4>
               </div>
@@ -1379,7 +1385,12 @@ export default function Home() {
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-wide">{selectedMovie.title}</h1>
+                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-wide">
+                  {selectedMovie.title}
+                  {selectedMovie.adult && (
+                    <span className="ml-3 align-middle text-xs sm:text-sm font-black bg-red-600 text-white px-2.5 py-1 rounded-md ring-1 ring-white/40">18+</span>
+                  )}
+                </h1>
                 <p className="text-xs sm:text-sm text-gray-400 mt-1">
                   {selectedMovie.genres?.length ? selectedMovie.genres.join(" / ") : selectedMovie.category} •{" "}
                   {selectedMovie.language} • ⭐ {selectedMovie.rating}
@@ -1514,6 +1525,9 @@ export default function Home() {
                     {selectedMovie.rating && (
                       <span className="inline-flex items-center gap-1 bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 px-3 py-1.5 rounded-full">⭐ {selectedMovie.rating}</span>
                     )}
+                    {selectedMovie.adult && (
+                      <span className="bg-red-600 text-white px-3 py-1.5 rounded-full ring-1 ring-white/30 font-black">🔞 18+</span>
+                    )}
                     {selectedMovie.year && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">{selectedMovie.year}</span>}
                     {selectedMovie.language && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">🌐 {selectedMovie.language}</span>}
                     {selectedMovie.quality && <span className="bg-red-600/20 border border-red-600/40 text-red-300 px-3 py-1.5 rounded-full">{selectedMovie.quality}</span>}
@@ -1646,6 +1660,7 @@ export default function Home() {
                     {activeHero.label}
                   </span>
                   <span className="text-yellow-400 font-bold text-sm">⭐ {heroItem.rating}</span>
+                  {heroItem.adult && <span className="bg-red-600 text-white text-xs font-black px-2.5 py-1 rounded-md ring-1 ring-white/40">18+</span>}
                 </div>
                 <h1 className="text-4xl sm:text-6xl font-black text-white">{heroItem.title}</h1>
                 <p className="text-gray-300 text-sm sm:text-base line-clamp-3">
@@ -1816,7 +1831,7 @@ export default function Home() {
           <p className="text-xs sm:text-sm text-gray-400 text-center sm:text-left">
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
             <span className="mx-2 text-gray-600">|</span>
-            Developed by <span className="text-white font-semibold">Shakya Rishmika</span>
+            Developed by <span className="text-white font-semibold">Cloud + Shakya</span>
             <span className="mx-2 text-gray-600">|</span>
             <button onClick={openDmca} className="text-gray-300 hover:text-red-500 underline-offset-4 hover:underline cursor-pointer transition">
               DMCA Policy

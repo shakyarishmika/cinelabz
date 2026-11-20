@@ -398,6 +398,7 @@ function TitleForm({ initial, onDone }) {
     videoUrl: initial?.videoUrl || "",
     qualityLinks: qualityLinksToText(initial?.videoLinks),
     trending: !!initial?.trending,
+    adult: !!initial?.adult,
     noticeText: initial?.notice?.text || "",
     noticeType: initial?.notice?.type || "player",
     trendingRank: initial?.trendingRank ?? "",
@@ -440,6 +441,7 @@ function TitleForm({ initial, onDone }) {
       subtitleUrl: f.subtitleUrl.trim(),
       subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       trending: !!f.trending,
+      adult: !!f.adult,
       notice: f.noticeText.trim() ? { text: f.noticeText.trim().slice(0, 200), type: f.noticeType } : null,
       trendingRank: f.trendingRank ? Number(f.trendingRank) : null,
       ...(isSeries
@@ -515,7 +517,7 @@ function TitleForm({ initial, onDone }) {
         <div>
           <label className={labelCls}>Language</label>
           <select value={f.language} onChange={set("language")} className={inputCls}>
-            {["English", "Tamil", "Hindi", "Kannada", "Korean", "Sinhala", "Other"].map((l) => (
+            {["English", "Tamil", "Hindi", "Telugu", "Malayalam", "Kannada", "Korean", "Sinhala", "Other"].map((l) => (
               <option key={l} value={l} className="bg-neutral-900">
                 {l}
               </option>
@@ -579,6 +581,16 @@ function TitleForm({ initial, onDone }) {
         </div>
         <p className="text-[11px] text-gray-500">Pick one. Player / Server = red bar. Telegram Bot = light-blue bar. Leave the message empty to hide the bar.</p>
         {f.noticeText.trim() && <NoticeBar notice={{ text: f.noticeText.trim(), type: f.noticeType }} />}
+      </div>
+
+      <div className="bg-black/30 border border-white/10 rounded-xl p-4">
+        <label className="flex items-center gap-3 text-sm font-semibold cursor-pointer">
+          <input type="checkbox" checked={f.adult} onChange={(e) => setF((p) => ({ ...p, adult: e.target.checked }))} className="w-4 h-4 accent-red-600" />
+          <span className="inline-flex items-center gap-2">
+            <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md ring-1 ring-white/40">18+</span>
+            This title is for adults only (shows an 18+ tag)
+          </span>
+        </label>
       </div>
 
       <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
@@ -884,7 +896,9 @@ function TitlesPanel({ items }) {
             <li key={t.id} className={`${cardCls} p-4 space-y-3`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-bold truncate">{t.title}</p>
+                  <p className="font-bold truncate">
+                    {t.title} {t.adult && <span className="ml-1 text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded-md align-middle">18+</span>}
+                  </p>
                   <p className="text-xs text-gray-400">
                     {t.type === "series" ? `TV Series • ${t.status || "ongoing"} • ${(t.seasons || []).reduce((n, s) => n + s.episodes.length, 0)} episodes` : "Movie"} • {t.language}
                   </p>
