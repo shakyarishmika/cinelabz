@@ -8,6 +8,7 @@ import { useAuth } from "../useAuth";
 import { isAdminEmail } from "../adminConfig";
 import TelegramLogo from "../TelegramLogo";
 import NoticeBar from "../NoticeBar";
+import AdultBadge from "../AdultBadge";
 import { PopupCard } from "../StartupPopup";
 import { movies as staticMovies } from "../moviesData";
 
@@ -380,10 +381,10 @@ function UsersPanel({ items }) {
 // ======================================================================
 // TITLES: add / edit movie or series
 // ======================================================================
-function TitleForm({ initial, onDone }) {
+function TitleForm({ initial, onDone, defaultType }) {
   const edit = !!initial;
   const [f, setF] = useState(() => ({
-    type: initial?.type || "movie",
+    type: initial?.type || defaultType || "movie",
     title: initial?.title || "",
     year: initial?.year ?? "",
     tmdbId: initial?.tmdbId ?? "",
@@ -479,9 +480,9 @@ function TitleForm({ initial, onDone }) {
           <button
             type="button"
             key={val}
-            disabled={edit}
+            disabled={edit || !!defaultType}
             onClick={() => setF((p) => ({ ...p, type: val }))}
-            className={`py-2.5 rounded-lg text-sm font-bold transition ${f.type === val ? "bg-red-600 text-white" : "text-gray-400"} ${edit ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:text-white"}`}
+            className={`py-2.5 rounded-lg text-sm font-bold transition ${f.type === val ? "bg-red-600 text-white" : "text-gray-400"} ${edit || defaultType ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:text-white"}`}
           >
             {label}
           </button>
@@ -587,7 +588,7 @@ function TitleForm({ initial, onDone }) {
         <label className="flex items-center gap-3 text-sm font-semibold cursor-pointer">
           <input type="checkbox" checked={f.adult} onChange={(e) => setF((p) => ({ ...p, adult: e.target.checked }))} className="w-4 h-4 accent-red-600" />
           <span className="inline-flex items-center gap-2">
-            <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md ring-1 ring-white/40">18+</span>
+            <AdultBadge size="xs" />
             This title is for adults only (shows an 18+ tag)
           </span>
         </label>
@@ -853,17 +854,24 @@ function EpisodesManager({ title, onBack }) {
   );
 }
 
-function TitlesPanel({ items }) {
+function TitlesPanel({ items, kind }) {
+  const isSeries = kind === "series";
   const [view, setView] = useState({ mode: "list" }); // list | form | episodes
+  const [q, setQ] = useState("");
   const current = view.id ? items.find((t) => t.id === view.id) : null;
+  const mine = items.filter((t) => (t.type || "movie") === kind); // only this kind (newest first)
+  const s = q.trim().toLowerCase();
+  const list = mine.filter((t) => !s || (t.title || "").toLowerCase().includes(s) || (t.language || "").toLowerCase().includes(s));
+  const noun = isSeries ? "TV series" : "movie";
 
   const remove = (t) =>
-    window.confirm(`Delete "${t.title}" and all its episodes?`) && deleteDoc(doc(db, "titles", t.id)).catch(fail);
+    window.confirm(`Delete "${t.title}"${t.type === "series" ? " and all its episodes" : ""}?`) && deleteDoc(doc(db, "titles", t.id)).catch(fail);
 
   if (view.mode === "form") {
     return (
       <TitleForm
         initial={current}
+        defaultType={kind}
         onDone={(next) => {
           // after adding a new series, jump to its episodes (newest title is first)
           if (next === "episodes-next") setView({ mode: "list", jumpNewest: true });
@@ -877,36 +885,43 @@ function TitlesPanel({ items }) {
   }
 
   return (
-    <div className="space-y-4">
-      <button onClick={() => setView({ mode: "form" })} className={`${redBtn} w-full`}>
-        + Add movie / TV series
-      </button>
-      {view.jumpNewest && items[0]?.type === "series" && (
-        <button onClick={() => setView({ mode: "episodes", id: items[0].id })} className="w-full bg-green-500/15 text-green-400 border border-green-500/30 rounded-xl px-4 py-3 text-sm font-bold cursor-pointer">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${noun}s…`} className={`${inputCls} sm:max-w-md`} />
+        <span className="hidden sm:flex items-center text-sm text-gray-500">{mine.length} {noun}{mine.length === 1 ? "" : "s"}</span>
+        <button onClick={() => setView({ mode: "form" })} className={`${redBtn} sm:ml-auto`}>
+          + Add {noun}
+        </button>
+      </div>
+      {view.jumpNewest && mine[0] && isSeries && (
+        <button onClick={() => setView({ mode: "episodes", id: mine[0].id })} className="w-full bg-green-500/15 text-green-400 border border-green-500/30 rounded-xl px-4 py-3 text-sm font-bold cursor-pointer">
           ✓ Series saved. Add its episodes now →
         </button>
       )}
       <p className="text-xs text-gray-500">Everything you add or change here shows on the site straight away. ☆ Trending puts a title in the Top 10 and the home banner.</p>
 
-      {items.length === 0 ? (
-        <Empty>No titles yet. Tap “+ Add movie / TV series” to add your first one.</Empty>
+      {list.length === 0 ? (
+        <Empty>{mine.length === 0 ? `No ${noun}s yet. Tap “+ Add ${noun}” to add your first one.` : "Nothing matches your search."}</Empty>
       ) : (
         <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3 items-start">
-          {items.map((t) => (
+          {list.map((t) => (
             <li key={t.id} className={`${cardCls} p-4 space-y-3`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-red-600/30 to-red-900/10 border border-red-600/30 flex items-center justify-center text-xl flex-shrink-0">
+                  {isSeries ? "📺" : "🎬"}
+                </div>
+                <div className="min-w-0 flex-1">
                   <p className="font-bold truncate">
-                    {t.title} {t.adult && <span className="ml-1 text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded-md align-middle">18+</span>}
+                    {t.title} {t.adult && <AdultBadge size="xs" className="ml-1 align-middle" />}
                   </p>
                   <p className="text-xs text-gray-400">
-                    {t.type === "series" ? `TV Series • ${t.status || "ongoing"} • ${(t.seasons || []).reduce((n, s) => n + s.episodes.length, 0)} episodes` : "Movie"} • {t.language}
+                    {isSeries ? `${t.status || "ongoing"} • ${(t.seasons || []).reduce((n, s2) => n + s2.episodes.length, 0)} episodes` : t.quality || "Movie"} • {t.language}
                   </p>
                 </div>
                 <span className="text-[11px] text-gray-500 flex-shrink-0">{when(t.createdAt)}</span>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {t.type === "series" && (
+                {isSeries && (
                   <button onClick={() => setView({ mode: "episodes", id: t.id })} className={redBtn}>
                     Episodes
                   </button>
@@ -1186,13 +1201,14 @@ function DashboardPanel({ requests, comments, users, titles, messages, go }) {
     ["Users", users.length, "👥", "users", "from-sky-500/25"],
     ["Pending requests", pend, "🎯", "requests", "from-yellow-500/25"],
     ["Comments", comments.length, "🗨️", "comments", "from-purple-500/25"],
-    ["Movies & series", titles.length, "🎬", "titles", "from-red-500/30"],
+    ["Movies", titles.filter((t) => (t.type || "movie") === "movie").length, "🎬", "movies", "from-red-500/30"],
+    ["TV series", titles.filter((t) => t.type === "series").length, "📺", "series", "from-orange-500/25"],
   ];
   const none = <p className="text-sm text-gray-500 py-4 text-center">Nothing yet.</p>;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         {stats.map(([label, n, icon, tab, grad]) => (
           <button key={label} onClick={() => go(tab)} className={`${cardCls} p-5 sm:p-6 text-left hover:border-red-600/50 transition cursor-pointer relative overflow-hidden group`}>
             <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full bg-gradient-to-br ${grad} to-transparent blur-xl opacity-70 group-hover:opacity-100 transition`} />
@@ -1204,7 +1220,8 @@ function DashboardPanel({ requests, comments, users, titles, messages, go }) {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <button onClick={() => go("titles")} className={redBtn}>+ Add movie / series</button>
+        <button onClick={() => go("movies")} className={redBtn}>+ Add movie</button>
+        <button onClick={() => go("series")} className={redBtn}>+ Add TV series</button>
         <button onClick={() => go("notify")} className={ghostBtn}>🔔 Send notification</button>
         <button onClick={() => go("popup")} className={ghostBtn}>📢 Startup popup</button>
       </div>
@@ -1437,7 +1454,8 @@ export default function AdminPage() {
 
   const NAV = [
     ["dashboard", "Dashboard", "🏠", 0],
-    ["titles", "Movies & Series", "🎬", 0],
+    ["movies", "Movies", "🎬", 0],
+    ["series", "TV Series", "📺", 0],
     ["requests", "Requests", "🎯", pending],
     ["messages", "Messages", "💬", unreadMessages],
     ["comments", "Comments", "🗨️", 0],
@@ -1447,7 +1465,8 @@ export default function AdminPage() {
   ];
   const HEAD = {
     dashboard: ["Overview", "Dashboard"],
-    titles: ["Content", "Movies & Series"],
+    movies: ["Content", "Movies"],
+    series: ["Content", "TV Series"],
     requests: ["People", "Requests"],
     messages: ["People", "Messages"],
     comments: ["People", "Comments"],
@@ -1540,7 +1559,8 @@ export default function AdminPage() {
             {tab === "requests" && <RequestsPanel items={requests} users={users} />}
             {tab === "comments" && <CommentsPanel items={comments} titleName={titleName} adminUser={user} />}
             {tab === "users" && <UsersPanel items={users} />}
-            {tab === "titles" && <TitlesPanel items={titles} />}
+            {tab === "movies" && <TitlesPanel items={titles} kind="movie" />}
+            {tab === "series" && <TitlesPanel items={titles} kind="series" />}
             {tab === "notify" && <NotifyPanel />}
             {tab === "popup" && <PopupPanel />}
             {tab === "messages" && <MessagesPanel items={data.messages} />}

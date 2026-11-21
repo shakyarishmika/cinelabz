@@ -18,6 +18,7 @@ import NoticeBar from "./NoticeBar";
 import StartupPopup from "./StartupPopup";
 import TmdbAttribution from "./TmdbAttribution";
 import RecentUploads from "./RecentUploads";
+import AdultBadge from "./AdultBadge";
 import ServerBar from "./ServerBar";
 import { SERVER_SLOTS } from "./servers";
 import AdvancedPlayer from "./AdvancedPlayer";
@@ -757,7 +758,9 @@ export default function Home() {
           {item.quality || "HD"}
         </span>
         {item.adult && (
-          <span className="absolute top-3 left-3 bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded-md ring-1 ring-white/40 shadow-lg">18+</span>
+          <span className="absolute top-3 left-3">
+            <AdultBadge size="sm" />
+          </span>
         )}
       </div>
       <div className="p-3 sm:p-4">
@@ -804,7 +807,9 @@ export default function Home() {
                 ⭐ {item.rating}
               </span>
               {item.adult && (
-                <span className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md ring-1 ring-white/40">18+</span>
+                <span className="absolute top-2 left-2">
+                  <AdultBadge size="xs" />
+                </span>
               )}
               <div className="absolute bottom-2 left-2 right-2 z-30">
                 <h4 className="font-bold text-xs text-white truncate">{item.title}</h4>
@@ -1387,9 +1392,7 @@ export default function Home() {
               <div>
                 <h1 className="text-2xl sm:text-4xl font-extrabold tracking-wide">
                   {selectedMovie.title}
-                  {selectedMovie.adult && (
-                    <span className="ml-3 align-middle text-xs sm:text-sm font-black bg-red-600 text-white px-2.5 py-1 rounded-md ring-1 ring-white/40">18+</span>
-                  )}
+                  {selectedMovie.adult && <AdultBadge size="md" className="ml-3 align-middle" />}
                 </h1>
                 <p className="text-xs sm:text-sm text-gray-400 mt-1">
                   {selectedMovie.genres?.length ? selectedMovie.genres.join(" / ") : selectedMovie.category} •{" "}
@@ -1526,7 +1529,9 @@ export default function Home() {
                       <span className="inline-flex items-center gap-1 bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 px-3 py-1.5 rounded-full">⭐ {selectedMovie.rating}</span>
                     )}
                     {selectedMovie.adult && (
-                      <span className="bg-red-600 text-white px-3 py-1.5 rounded-full ring-1 ring-white/30 font-black">🔞 18+</span>
+                      <span className="inline-flex items-center gap-2 bg-red-600/10 border border-red-600/30 text-red-200 pl-1.5 pr-3 py-1 rounded-full">
+                        <AdultBadge size="sm" /> Adults only
+                      </span>
                     )}
                     {selectedMovie.year && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">{selectedMovie.year}</span>}
                     {selectedMovie.language && <span className="bg-white/10 border border-white/10 px-3 py-1.5 rounded-full">🌐 {selectedMovie.language}</span>}
@@ -1660,7 +1665,7 @@ export default function Home() {
                     {activeHero.label}
                   </span>
                   <span className="text-yellow-400 font-bold text-sm">⭐ {heroItem.rating}</span>
-                  {heroItem.adult && <span className="bg-red-600 text-white text-xs font-black px-2.5 py-1 rounded-md ring-1 ring-white/40">18+</span>}
+                  {heroItem.adult && <AdultBadge size="md" />}
                 </div>
                 <h1 className="text-4xl sm:text-6xl font-black text-white">{heroItem.title}</h1>
                 <p className="text-gray-300 text-sm sm:text-base line-clamp-3">
