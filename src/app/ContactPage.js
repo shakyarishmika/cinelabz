@@ -16,7 +16,7 @@ function AdminAvatar() {
   const [failed, setFailed] = useState(false);
   return (
     <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-900 border-2 border-red-600 shadow-md shadow-red-600/30 flex items-center justify-center text-xs font-black text-red-500 flex-shrink-0">
-      {failed ? "A" : <img src="/AdminLogo.png" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
+      {failed ? "A" : <img src="/AdminLogo.jpeg" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
     </div>
   );
 }

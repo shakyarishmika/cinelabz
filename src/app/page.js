@@ -682,23 +682,24 @@ export default function Home() {
   // Hide the real video link from the page source: the player gets a signed token link instead.
   // Not used for Mega embeds (iframe) or HLS .m3u8 playlists (their segments can't go through a token).
   const isHlsUrl = !!playUrl && /\.m3u8(\?|#|$)/i.test(playUrl);
+  const wantProxy = !!source?.proxy && !!playUrl && !isMegaEmbed; // admin ticked "Use proxy" (fixes CORS errors)
   const [tokenSrc, setTokenSrc] = useState(null);
   const [tokenFailed, setTokenFailed] = useState(false);
   useEffect(() => {
     setTokenSrc(null);
     setTokenFailed(false);
-    if (!playUrl || isMegaEmbed || isHlsUrl) return;
+    if (!playUrl || isMegaEmbed || (isHlsUrl && !wantProxy)) return;
     let alive = true;
-    fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl }) })
+    fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: playUrl, proxy: wantProxy }) })
       .then((r) => r.json())
       .then((j) => alive && (j.src ? setTokenSrc(j.src) : setTokenFailed(true)))
       .catch(() => alive && setTokenFailed(true));
     return () => {
       alive = false;
     };
-  }, [playUrl, isMegaEmbed, isHlsUrl]);
+  }, [playUrl, isMegaEmbed, isHlsUrl, wantProxy]);
   // what the player really plays (null = still waiting for the token)
-  const finalSrc = !playUrl ? null : isMegaEmbed || isHlsUrl || tokenFailed ? playUrl : tokenSrc;
+  const finalSrc = !playUrl ? null : isMegaEmbed || (isHlsUrl && !wantProxy) || tokenFailed ? playUrl : tokenSrc;
 
   // Servers under the player: Main = the links from the admin panel, Server 2/3/4 = your custom players
   const altKeys = SERVER_SLOTS.map((s) => s.id).filter((id) => source?.altServers?.[id]);
@@ -1450,6 +1451,7 @@ export default function Home() {
               <AdvancedPlayer
                 key={`${selectedMovie.id}-${activeSeason?.number ?? 0}-${activeEpisode?.number ?? 0}`}
                 src={finalSrc}
+                isHls={isHlsUrl}
                 poster={selectedMovie.backdrop || selectedMovie.poster || FALLBACK_POSTER}
                 subtitles={subtitleList}
                 title={downloadTitle}
@@ -1836,7 +1838,7 @@ export default function Home() {
           <p className="text-xs sm:text-sm text-gray-400 text-center sm:text-left">
             © 2026 <span className="text-red-500 font-bold">CineLabz</span>. All rights reserved
             <span className="mx-2 text-gray-600">|</span>
-            Developed by <span className="text-white font-semibold">Cloud + Shakya</span>
+            Developed by <span className="text-white font-semibold">Shakya Rishmika</span>
             <span className="mx-2 text-gray-600">|</span>
             <button onClick={openDmca} className="text-gray-300 hover:text-red-500 underline-offset-4 hover:underline cursor-pointer transition">
               DMCA Policy

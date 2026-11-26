@@ -1,6 +1,6 @@
 "use client";
 
-// Comments with reply. Replies from the admin show the AdminLogo.png in a red ring + "Admin" badge.
+// Comments with replies. Replies from the admin show the AdminLogo.jpeg in a red ring + "Admin" badge.
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "./firebase";
@@ -21,7 +21,7 @@ function Avatar({ c, size = "w-9 h-9" }) {
   if (c.isAdmin) {
     return (
       <div className={`${size} rounded-full overflow-hidden bg-neutral-900 border-2 border-red-600 shadow-md shadow-red-600/30 flex items-center justify-center text-xs font-black text-red-500 flex-shrink-0`}>
-        {failed ? "A" : <img src="/AdminLogo.png" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
+        {failed ? "A" : <img src="/AdminLogo.jpeg" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
       </div>
     );
   }

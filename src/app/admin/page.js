@@ -74,6 +74,20 @@ const altFrom = (o) => {
   });
   return out;
 };
+function ProxyToggle({ checked, onChange }) {
+  return (
+    <label className="flex items-start gap-3 bg-black/30 border border-white/10 rounded-xl p-4 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="w-4 h-4 mt-0.5 accent-red-600 flex-shrink-0" />
+      <span>
+        <span className="block text-sm font-semibold">Use proxy (fixes CORS errors)</span>
+        <span className="block text-[11px] text-gray-500 mt-0.5">
+          The video goes through your own server. Tick it only for links that fail with CORS errors. The link's website must be listed in PROXY_ALLOWED_HOSTS. It uses your hosting bandwidth.
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function AltServerFields({ value, onChange }) {
   return (
     <div className="bg-black/30 border border-white/10 rounded-xl p-4 space-y-3">
@@ -99,7 +113,7 @@ function Avatar({ name, photo, size = "w-10 h-10", admin = false }) {
   if (admin) {
     return (
       <div className={`${size} rounded-full overflow-hidden bg-neutral-900 border-2 border-red-600 shadow-md shadow-red-600/30 flex items-center justify-center text-xs font-black text-red-500 flex-shrink-0`}>
-        {failed ? "A" : <img src="/AdminLogo.png" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
+        {failed ? "A" : <img src="/AdminLogo.jpeg" alt="Admin" className="w-full h-full object-cover" onError={() => setFailed(true)} />}
       </div>
     );
   }
@@ -409,6 +423,7 @@ function TitleForm({ initial, onDone, defaultType }) {
     telegramUrl: initial?.downloads?.telegramUrl || "",
     streamCode: initial?.streamCode || "",
     alt: { s2: initial?.altServers?.s2 || "", s3: initial?.altServers?.s3 || "", s4: initial?.altServers?.s4 || "" },
+    proxy: !!initial?.proxy,
   }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -452,6 +467,7 @@ function TitleForm({ initial, onDone, defaultType }) {
             videoLinks: Object.keys(links).length ? links : null,
             streamCode: f.streamCode.trim(),
             altServers: Object.keys(alt).length ? alt : null,
+            proxy: !!f.proxy,
             downloads: hasDownloads ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
           }),
     };
@@ -642,6 +658,7 @@ function TitleForm({ initial, onDone, defaultType }) {
             <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…\n480p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
             <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
           </div>
+          <ProxyToggle checked={f.proxy} onChange={(c) => setF((p) => ({ ...p, proxy: c }))} />
           <AltServerFields value={f.alt} onChange={(k, v) => setF((p) => ({ ...p, alt: { ...p.alt, [k]: v } }))} />
           <div>
             <label className={labelCls}>Telegram stream code (video only, optional)</label>
@@ -685,7 +702,7 @@ function TitleForm({ initial, onDone, defaultType }) {
 // TITLES: seasons + episodes of one series
 // ======================================================================
 function EpisodesManager({ title, onBack }) {
-  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", alt: { s2: "", s3: "", s4: "" }, subtitleUrl: "", subtitleDownloadUrl: "", servers: "", telegramUrl: "" };
+  const blank = { season: "1", ep: "1", name: "", duration: "", videoUrl: "", qualityLinks: "", streamCode: "", alt: { s2: "", s3: "", s4: "" }, proxy: false, subtitleUrl: "", subtitleDownloadUrl: "", servers: "", telegramUrl: "" };
   const [f, setF] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -713,6 +730,7 @@ function EpisodesManager({ title, onBack }) {
       videoLinks: Object.keys(links).length ? links : null,
       streamCode: f.streamCode.trim(),
       altServers: Object.keys(alt).length ? alt : null,
+      proxy: !!f.proxy,
       subtitleUrl: f.subtitleUrl.trim(),
       subtitleDownloadUrl: f.subtitleDownloadUrl.trim(),
       downloads: direct.length || f.telegramUrl.trim() ? { direct, telegramUrl: f.telegramUrl.trim() } : null,
@@ -759,6 +777,7 @@ function EpisodesManager({ title, onBack }) {
       qualityLinks: qualityLinksToText(ep.videoLinks),
       streamCode: ep.streamCode || "",
       alt: { s2: ep.altServers?.s2 || "", s3: ep.altServers?.s3 || "", s4: ep.altServers?.s4 || "" },
+      proxy: !!ep.proxy,
       subtitleUrl: ep.subtitleUrl || "",
       subtitleDownloadUrl: ep.subtitleDownloadUrl || "",
       servers: serversToText(ep.downloads?.direct),
@@ -823,6 +842,7 @@ function EpisodesManager({ title, onBack }) {
           <textarea value={f.qualityLinks} onChange={set("qualityLinks")} rows={3} placeholder={"1080p | https://…\n720p | https://…"} className={`${inputCls} resize-none font-mono text-xs`} />
           <p className="text-[11px] text-gray-500 mt-1">{QUALITY_HINT}</p>
         </div>
+        <ProxyToggle checked={f.proxy} onChange={(c) => setF((p) => ({ ...p, proxy: c }))} />
         <AltServerFields value={f.alt} onChange={(k, v) => setF((p) => ({ ...p, alt: { ...p.alt, [k]: v } }))} />
         <div>
           <label className={labelCls}>Telegram stream code (video only, optional)</label>

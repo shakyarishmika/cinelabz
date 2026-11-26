@@ -196,7 +196,7 @@ const getFsEl = () => document.fullscreenElement || document.webkitFullscreenEle
 // subtitles = [{ label, url }]   (url = direct link to .srt / .vtt)
 // qualities = ["1080p","720p"] (separate links) + quality = current one + onQuality(label)
 // For .m3u8 links the qualities come from the playlist itself.
-export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title, qualities = [], quality = "", onQuality }) {
+export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey, title, qualities = [], quality = "", onQuality, isHls }) {
   const boxRef = useRef(null);
   const videoRef = useRef(null);
   const barRef = useRef(null);
@@ -511,7 +511,8 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
     const native = () => {
       v.src = playSrc;
     };
-    if (!/\.m3u8(\?|#|$)/i.test(playSrc)) {
+    const hlsMode = typeof isHls === "boolean" ? isHls : /\.m3u8(\?|#|$)/i.test(playSrc);
+    if (!hlsMode) {
       native();
     } else {
       import("hls.js")
@@ -552,7 +553,7 @@ export default function AdvancedPlayer({ src, poster, subtitles = [], storageKey
       hlsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playSrc, reloadKey]);
+  }, [playSrc, reloadKey, isHls]);
 
   const pickLevel = (idx) => {
     setLevelSel(idx);
